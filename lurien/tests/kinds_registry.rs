@@ -174,6 +174,7 @@ fn no_vendor_binding_leaks_a_vendor_name_into_the_engine() {
     // learned a vendor and the catalog stopped being the single owner.
     let additions = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine/additions/challenge");
     if !additions.is_dir() {
+        println!("SKIP: no browser checkout at {}", additions.display());
         return;
     }
     let names: Vec<String> = vendor_files()
@@ -277,7 +278,10 @@ fn every_claimed_kind_names_a_proof_that_can_be_run_again() {
 /// it, which is where this has to be red.
 fn pinned_engine() -> Option<String> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine/upstream.sh");
-    let raw = fs::read_to_string(path).ok()?;
+    let Ok(raw) = fs::read_to_string(&path) else {
+        println!("SKIP: no browser checkout at {}", path.display());
+        return None;
+    };
     let mut version = None;
     let mut release = None;
     for line in raw.lines() {

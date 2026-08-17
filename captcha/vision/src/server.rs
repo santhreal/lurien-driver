@@ -248,8 +248,11 @@ mod tests {
     fn the_engine_client_speaks_this_protocol_version() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../engine/additions/challenge/HelperSock.sys.mjs");
-        let Ok(source) = std::fs::read_to_string(path) else {
-            return; // the engine is a sibling checkout; vacuous without it
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            // The browser is a sibling checkout. Say so, so a skip is not read
+            // as a protocol version that agreed.
+            println!("SKIP: no browser checkout at {}", path.display());
+            return;
         };
         let needle = "const PROTOCOL_VERSION = ";
         let index = source.find(needle).expect("HelperSock declares PROTOCOL_VERSION");

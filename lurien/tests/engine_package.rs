@@ -17,8 +17,16 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn additions() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine/additions/challenge")
+/// The challenge modules live in the browser repository, which is a separate
+/// checkout. Absence is printed rather than returned quietly: a silent skip
+/// reads exactly like a law that passed.
+fn additions() -> Option<PathBuf> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine/additions/challenge");
+    if dir.is_dir() {
+        return Some(dir);
+    }
+    println!("SKIP: no browser checkout at {}", dir.display());
+    None
 }
 
 /// Every module file in the directory, by file name.
@@ -43,10 +51,7 @@ fn module_files(dir: &Path) -> BTreeSet<String> {
 
 #[test]
 fn every_engine_module_is_in_the_jar_manifest() {
-    let dir = additions();
-    if !dir.is_dir() {
-        return;
-    }
+    let Some(dir) = additions() else { return };
     let manifest = fs::read_to_string(dir.join("jar.mn")).expect("jar.mn");
     for name in module_files(&dir) {
         assert!(
@@ -59,10 +64,7 @@ fn every_engine_module_is_in_the_jar_manifest() {
 
 #[test]
 fn every_manifest_entry_names_a_file_that_exists() {
-    let dir = additions();
-    if !dir.is_dir() {
-        return;
-    }
+    let Some(dir) = additions() else { return };
     let manifest = fs::read_to_string(dir.join("jar.mn")).expect("jar.mn");
     for line in manifest.lines() {
         let line = line.trim();
@@ -88,10 +90,7 @@ fn every_manifest_entry_names_a_file_that_exists() {
 
 #[test]
 fn every_module_import_resolves_to_a_packaged_module() {
-    let dir = additions();
-    if !dir.is_dir() {
-        return;
-    }
+    let Some(dir) = additions() else { return };
     let present = module_files(&dir);
     for name in &present {
         let source = fs::read_to_string(dir.join(name)).unwrap_or_default();
@@ -122,10 +121,7 @@ fn every_module_import_resolves_to_a_packaged_module() {
 /// run time, so the agreement is checked here.
 #[test]
 fn the_engine_stamps_the_version_the_driver_reads() {
-    let dir = additions();
-    if !dir.is_dir() {
-        return;
-    }
+    let Some(dir) = additions() else { return };
     let source = fs::read_to_string(dir.join("Observer.sys.mjs")).expect("Observer.sys.mjs");
     let needle = "export const EVIDENCE_VERSION = ";
     let index = source
@@ -168,10 +164,7 @@ fn js_string_list(source: &str, name: &str) -> Vec<String> {
 /// on a page with one widget, so the table is held complete here instead.
 #[test]
 fn every_kind_has_a_place_in_the_order_that_gates_a_page() {
-    let dir = additions();
-    if !dir.is_dir() {
-        return;
-    }
+    let Some(dir) = additions() else { return };
     let source = fs::read_to_string(dir.join("Kinds.sys.mjs")).expect("Kinds.sys.mjs");
     let kinds = js_string_list(&source, "KINDS");
     let severity = js_string_list(&source, "KIND_SEVERITY");
@@ -216,10 +209,7 @@ fn every_kind_has_a_place_in_the_order_that_gates_a_page() {
 /// page being solved is `none`.
 #[test]
 fn the_driver_charges_for_the_read_the_engine_pays_for() {
-    let dir = additions();
-    if !dir.is_dir() {
-        return;
-    }
+    let Some(dir) = additions() else { return };
     let source = fs::read_to_string(dir.join("Prelude.sys.mjs")).expect("Prelude.sys.mjs");
     let needle = "const BUDGET_SHARE = 1 / ";
     let index = source
@@ -262,6 +252,7 @@ fn the_driver_charges_for_the_read_the_engine_pays_for() {
 fn the_patch_still_starts_the_subsystem_with_automation() {
     let patch = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine/patches/challenge-register.patch");
     if !patch.is_file() {
+        println!("SKIP: no browser checkout at {}", patch.display());
         return;
     }
     let source = fs::read_to_string(&patch).expect("challenge-register.patch");
@@ -297,10 +288,7 @@ fn the_patch_still_starts_the_subsystem_with_automation() {
 /// is exactly the run that needs the distinction.
 #[test]
 fn the_observer_announces_a_start_the_driver_can_read() {
-    let dir = additions();
-    if !dir.is_dir() {
-        return;
-    }
+    let Some(dir) = additions() else { return };
     let source = fs::read_to_string(dir.join("Observer.sys.mjs")).expect("Observer.sys.mjs");
     let open = source
         .find("  configure(config) {")
