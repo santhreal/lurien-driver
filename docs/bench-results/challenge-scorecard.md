@@ -81,3 +81,19 @@ The `slider` fixture rules out the ways a drag can be faked:
 - The binding names the puzzle as "first canvas in this BC" and the handle as
   "first draggable in this BC", so no coordinate and no vendor class name is
   involved in finding either.
+
+The `prelude` fixture rules out a solve that clicks a page nobody read:
+
+- The widget writes its token only when the parent reports at least six trusted
+  `mousemove` events outside the widget rectangle, at least one trusted `wheel`,
+  and a non-zero `scrollY`. Moves inside the rectangle are the approach, not
+  reading, and are not counted.
+- A pointer inside the widget within 300 ms of load is refused, so a session that
+  lands on the widget at load time fails on timing alone.
+- The evidence crosses the origin boundary by `postMessage` from the parent,
+  because the widget cannot see the page's own events; a page-script solver cannot
+  forge it, since every counted event had `isTrusted` true.
+- The second phase ships an empty prelude, dispatches the same trusted click, and
+  requires no token. Measured on 2026-08-17 against engine 150.0.2-beta.25: 14
+  moves and 6 wheel events cleared the widget in 8.6 s, and the unread run was
+  refused.

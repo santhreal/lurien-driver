@@ -54,7 +54,10 @@ carries a dated row for it; an unclaimed kind is refused rather than reported as
 a pass, and a test enforces that. Claimed today: `none`, `score`, `checkbox`,
 `pow`, `slider`. A proof of work is computed in the browser itself, in worker
 lanes, with no helper process and no external service. A slider is measured from
-the rendered image by a loopback helper and dragged with sampled dynamics.
+the rendered image by a loopback helper and dragged with sampled dynamics. Every
+act is preceded by a visit: the page is settled, scrolled and crossed by the
+pointer from a plan sampled per session, because a page nobody read scores as a
+machine however trusted the click is.
 
 Honest leaks: matched-host Linux Firefox only. Cross-OS fonts/WebGL/WebGPU,
 inert `canvas:seed`, and proxyless TTL remain.

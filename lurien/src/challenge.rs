@@ -116,6 +116,7 @@ impl ChallengeConfig {
             "claimed_kinds": CLAIMED_KINDS,
             "trajectory": approach_path(),
             "drag_profile": drag_profile(),
+            "prelude": prelude_plan(),
         });
         if let Some(dir) = self.modules.as_ref() {
             config["modules"] = serde_json::Value::String(dir.display().to_string());
@@ -170,6 +171,7 @@ fn with_dynamics(raw: &str) -> String {
     };
     map.entry("trajectory").or_insert_with(approach_path);
     map.entry("drag_profile").or_insert_with(drag_profile);
+    map.entry("prelude").or_insert_with(prelude_plan);
     value.to_string()
 }
 
@@ -252,6 +254,80 @@ fn drag_profile() -> serde_json::Value {
     rows.push(serde_json::json!({ "f": 1.0 - correction, "dy": 0.0, "dt": 33 }));
     rows.push(serde_json::json!({ "f": 1.0 + correction / 3.0, "dy": -0.4, "dt": 21 }));
     serde_json::Value::Array(rows)
+}
+
+/// Points in the pre-touch wander across the viewport.
+const WANDER_POINTS: usize = 14;
+
+/// What happens on a page before its widget is touched.
+///
+/// A solve that begins with the pointer materializing on the checkbox is the
+/// strongest tell left once the events themselves are trusted: a scoring vendor
+/// weighs the reading that preceded the click, and a page that was never scrolled
+/// and never crossed by a pointer has no reading in it. The plan is data, sampled
+/// here from the same corpus and the same pacing library as the rest of the
+/// session, and executed by the engine in the page's own context.
+///
+/// `settle_ms` is the pause after load, `scroll` is a wheel session from
+/// `guise::human::scroll` where each step is `{delta, mode, lines, dt}` in the
+/// wheel device's own units, `wander` is a pointer path in viewport fractions,
+/// and `dwell_ms` is the hover before the act.
+fn prelude_plan() -> serde_json::Value {
+    use guise::human::scroll::{HumanScrollConfig, HumanScroller, ScrollBehavior};
+    use guise::human::timing::ActionDelay;
+    use guise::human::wheel::WheelDevice;
+    let mut rng = rand::rngs::StdRng::from_entropy();
+    // Reading is the intent that fits a page holding a challenge: the visitor is
+    // there for the content, not skimming for a link.
+    let scroller = HumanScroller::new(HumanScrollConfig {
+        total_px: 520,
+        behavior: ScrollBehavior::Reading,
+        flick_count: 3,
+        scroll_down: true,
+        wheel_device: WheelDevice::MouseWheel,
+    });
+    let step_px = WheelDevice::MouseWheel.properties().step_px.max(1.0);
+    let scroll: Vec<serde_json::Value> = scroller
+        .plan(&mut rng)
+        .into_iter()
+        .map(|step| {
+            // A wheel event carries its delta in the units its device reports:
+            // lines for a notched wheel, pixels for a trackpad. The engine
+            // dispatches what it is given rather than converting, so the
+            // conversion lives here, next to the device that defines the step.
+            let delta = if step.delta_mode == 1 {
+                step.delta_y / step_px
+            } else {
+                step.delta_y
+            };
+            serde_json::json!({
+                "delta": (delta * 100.0).round() / 100.0,
+                "mode": step.delta_mode,
+                "lines": delta.trunc() as i64,
+                "dt": step.after_ms,
+            })
+        })
+        .collect();
+    // Across the viewport, not towards the widget: this is the traffic that
+    // happens before the widget is a target at all.
+    let sampler = MouseSampler::new();
+    let points = sampler.resampled_path(0.08, 0.12, 0.72, 0.66, WANDER_POINTS, 0.05, &mut rng);
+    let wander: Vec<serde_json::Value> = points
+        .iter()
+        .map(|(x, y)| {
+            serde_json::json!({
+                "x": (x.clamp(0.02, 0.98) * 1000.0).round() / 1000.0,
+                "y": (y.clamp(0.02, 0.98) * 1000.0).round() / 1000.0,
+                "dt": u64::try_from(ActionDelay::micro().as_millis()).unwrap_or(120),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "settle_ms": u64::try_from(ActionDelay::after_page_load().as_millis()).unwrap_or(1_200),
+        "scroll": scroll,
+        "wander": wander,
+        "dwell_ms": u64::try_from(ActionDelay::hover_dwell().as_millis()).unwrap_or(320),
+    })
 }
 
 /// The engine's last word on `url`, if it wrote one.
@@ -463,6 +539,86 @@ mod tests {
     fn two_drags_do_not_share_a_profile() {
         // A profile reused across solves is a signature. Sampling is per drag.
         assert_ne!(drag_profile(), drag_profile());
+    }
+
+    #[test]
+    fn the_prelude_reads_the_page_before_it_touches_the_widget() {
+        let plan = prelude_plan();
+        let settle = plan["settle_ms"].as_u64().expect("settle");
+        assert!(
+            (300..=4_000).contains(&settle),
+            "settling {settle}ms after load is not how a page is read"
+        );
+        let dwell = plan["dwell_ms"].as_u64().expect("dwell");
+        assert!(
+            (100..=1_500).contains(&dwell),
+            "a {dwell}ms hover before the act is not a hand"
+        );
+
+        let scroll = plan["scroll"].as_array().expect("scroll session");
+        assert!(scroll.len() >= 3, "a {}-step scroll is not reading", scroll.len());
+        let travelled: f64 = scroll.iter().map(|s| s["delta"].as_f64().expect("delta")).sum();
+        assert!(travelled > 1.0, "the page was never scrolled down: {travelled}");
+        let gaps: std::collections::BTreeSet<u64> =
+            scroll.iter().map(|s| s["dt"].as_u64().expect("dt")).collect();
+        assert!(gaps.len() > 1, "one wheel cadence for every step is a signature");
+        // A notched wheel reports lines, and a wheel event whose delta and its
+        // integer line count disagree in sign is not a device report.
+        for step in scroll {
+            let mode = step["mode"].as_u64().expect("delta mode");
+            assert_eq!(mode, 1, "the reading persona is a notched wheel");
+            let delta = step["delta"].as_f64().expect("delta");
+            let lines = step["lines"].as_i64().expect("line count");
+            assert!(
+                delta.abs() < 12.0,
+                "{delta} lines in one flick is a page jump, not a notch"
+            );
+            assert!(
+                lines == 0 || (lines > 0) == (delta > 0.0),
+                "delta {delta} and line count {lines} disagree"
+            );
+        }
+
+        let wander = plan["wander"].as_array().expect("wander path");
+        assert!(wander.len() >= 6, "a {}-point wander is a jump", wander.len());
+        let xs: Vec<f64> = wander.iter().map(|p| p["x"].as_f64().expect("x")).collect();
+        let ys: Vec<f64> = wander.iter().map(|p| p["y"].as_f64().expect("y")).collect();
+        assert!(
+            xs.iter().chain(ys.iter()).all(|v| (0.0..=1.0).contains(v)),
+            "the wander left the viewport"
+        );
+        // A path whose every step is the same size is a lerp, which is the shape
+        // a driver-side moveTo produces and the shape this plan exists to avoid.
+        let steps: Vec<f64> = xs
+            .windows(2)
+            .zip(ys.windows(2))
+            .map(|(x, y)| ((x[1] - x[0]).powi(2) + (y[1] - y[0]).powi(2)).sqrt())
+            .collect();
+        let mean = steps.iter().sum::<f64>() / steps.len() as f64;
+        let spread = steps.iter().map(|s| (s - mean).abs()).fold(0.0, f64::max);
+        assert!(spread > mean * 0.05, "the wander moved at one speed: mean {mean}");
+    }
+
+    #[test]
+    fn two_pages_do_not_share_a_prelude() {
+        // Reading behaviour reused across pages is one more constant to match on.
+        assert_ne!(prelude_plan(), prelude_plan());
+    }
+
+    #[test]
+    fn a_caller_supplied_config_gains_a_prelude_but_keeps_its_own() {
+        let bare = r#"{"catalog":[],"budget_ms":1000}"#;
+        let filled: serde_json::Value =
+            serde_json::from_str(&with_dynamics(bare)).expect("filled config is json");
+        assert!(filled["prelude"]["scroll"].as_array().is_some_and(|s| !s.is_empty()));
+
+        // An e2e phase proving a page that was never read is refused needs to ship
+        // an empty prelude and have it survive.
+        let named = r#"{"catalog":[],"prelude":{"settle_ms":0,"scroll":[],"wander":[],"dwell_ms":0}}"#;
+        let kept: serde_json::Value =
+            serde_json::from_str(&with_dynamics(named)).expect("kept config is json");
+        assert_eq!(kept["prelude"]["scroll"].as_array().expect("scroll").len(), 0);
+        assert_eq!(kept["prelude"]["settle_ms"], 0);
     }
 
     #[test]

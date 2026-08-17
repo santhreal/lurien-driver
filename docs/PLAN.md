@@ -23,6 +23,7 @@ Do not create `santhreal/reynard`, do not ship `REYNARD_*`, do not leave `softwa
 | claimed kinds | `none`, `score`, `checkbox`, `pow`, `slider`, each with a dated scorecard row |
 | `pow` | solved in the browser: `Pow.sys.mjs` plus `PowWorker.js` lanes, no helper, proven by `lurien/tests/e2e_pow.sh` |
 | `slider` | measured by `lurien-vision` from the widget's own snapshot, dragged along a sampled profile, proven by `lurien/tests/e2e_slider.sh` |
+| the visit | `Prelude.sys.mjs` reads the page in the top document before any act, from a plan `guise` sampled, proven by `lurien/tests/e2e_prelude.sh` |
 
 `lurien-driver` is not published while `visual` and `audio` are still refused.
 
@@ -396,6 +397,7 @@ goto(url)
   Catalog.classify(chrome signals) → (kind, target, token)
     none      → document usable
     score     → Token.wait (vendor write). Managed CF already does this
+    any act   → Prelude(top BC): settle, wander, wheel session, dwell, then the kind
     checkbox  → Input.click(child BC, guise trajectory, catalog target)
     visual    → Snapshot(child BC) → helper → Input on same BC
     slider    → Snapshot → helper axis → Input.drag on same BC
@@ -455,12 +457,13 @@ file under `additions/challenge/` whose identifier matches a vendor
 | `Catalog` | parse kinds/*.toml; reject unknown kind / missing field |
 | `Classify` | chrome signals → (kind, target, token spec) |
 | `Input` | trusted pointer / key / drag on a **named** BC |
+| `Prelude` | the visit before the act: settle, pointer path, wheel session, dwell, in the **top** BC |
 | `Token` | success = vendor write, never our JS string |
 | `Snapshot` | compositor grab of a named BC (not parent + black iframe) |
 | `HelperSock` | bytes to the vision and audio helpers; answer back; helper never sees the page |
 
-Trajectory for `Input` comes from `guise::human::mouse`. Native
-`MouseTrajectories.hpp` stays deleted.
+Trajectory for `Input` and the reading cadence for `Prelude` come from
+`guise::human::{mouse, scroll}`. Native `MouseTrajectories.hpp` stays deleted.
 
 v1 ships Catalog + Token for `score` (and `none` / `fail`). Managed CF
 holds because `goto` waits on the token hook, not `auto_solve`.

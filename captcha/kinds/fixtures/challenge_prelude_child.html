@@ -1,0 +1,87 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>widget that scores the visit</title>
+<!--
+  The widget half of the `prelude` fixture.
+
+  A trusted click is necessary and not sufficient. This widget writes its token
+  only when the page it sits in was actually visited: a pointer crossed it outside
+  this frame, a wheel scrolled it, and some time passed between the load and the
+  first pointer inside this frame. That is the shape of a scoring vendor's
+  decision, held here as a hard gate so a solve that skips the visit is refused
+  rather than reported as a pass.
+
+  The evidence arrives by postMessage from the parent, because this context is
+  cross-origin and cannot see any of it.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 12px; }
+  #box {
+    width: 22px; height: 22px; border: 2px solid #666; border-radius: 3px;
+    display: inline-block; vertical-align: middle; cursor: pointer;
+  }
+  #box[aria-checked="true"] { background: #2b7; border-color: #2b7; }
+</style>
+
+<div id="box" role="checkbox" aria-checked="false" tabindex="0"></div>
+<span id="label">Verify you are human</span>
+<input type="hidden" name="fixture-token" value="">
+<div id="state">untouched</div>
+
+<script>
+  /** Reading the parent needs to have produced at least this much traffic. */
+  const NEED_MOVES = 6;
+  const NEED_WHEELS = 1;
+  /** A pointer inside the widget this soon after load read nothing first. */
+  const NEED_SETTLE_MS = 300;
+
+  const box = document.getElementById("box");
+  const token = document.querySelector('input[name="fixture-token"]');
+  const state = document.getElementById("state");
+  let visit = null;
+  let downTrusted = false;
+
+  addEventListener("message", event => {
+    if (event.data && event.data.fixture === "visit") {
+      visit = event.data;
+    }
+  });
+
+  box.addEventListener("mousedown", event => {
+    downTrusted = event.isTrusted;
+  });
+
+  box.addEventListener("click", event => {
+    if (!event.isTrusted || !downTrusted) {
+      state.textContent = "refused: untrusted";
+      return;
+    }
+    if (!visit) {
+      state.textContent = "refused: the page reported no visit";
+      return;
+    }
+    if (visit.moves < NEED_MOVES) {
+      state.textContent = "refused: " + visit.moves + " moves outside the widget";
+      return;
+    }
+    if (visit.wheels < NEED_WHEELS) {
+      state.textContent = "refused: the page was never scrolled";
+      return;
+    }
+    if (!visit.scrolled) {
+      state.textContent = "refused: the wheel moved nothing";
+      return;
+    }
+    const settled = visit.enteredAfterMs;
+    if (settled !== null && settled < NEED_SETTLE_MS) {
+      state.textContent = "refused: pointer entered " + settled + "ms after load";
+      return;
+    }
+    box.setAttribute("aria-checked", "true");
+    token.value =
+      "fixture-" + visit.moves + "m-" + visit.wheels + "w-" + visit.scrolled + "px";
+    state.textContent = "solved";
+  });
+
+  parent.postMessage("fixture:ready", "*");
+</script>

@@ -54,9 +54,19 @@
   drag is a profile sampled per solve from the same corpus as the approach path, with
   an overshoot and two corrections, dispatched as individual trusted moves. A binding
   names the puzzle it measures and the handle it drags, both resolved structurally.
-- A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory` and
-  `drag_profile` when it names neither. Without this the engine fell back to a
-  built-in constant, so every session moved identically.
+- Every act is preceded by a visit. The driver samples a `prelude` plan (settle,
+  pointer path across the viewport, wheel session, dwell) from the same persona as
+  the fingerprint, and `Prelude.sys.mjs` dispatches it in the top document as
+  trusted events before any kind is acted on. Reading is a property of the page,
+  not of the cross-origin frame, and a page nobody read scores as a machine however
+  trusted the click is. The visit is bounded to a third of the page budget and its
+  counts are recorded in the evidence row's `visit` field.
+- `guise::human::scroll::HumanScroller::plan` returns the wheel session as data
+  (`ScrollStep`), so the browser dispatches a cadence guise owns instead of a
+  second scroll signature written next to it.
+- A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
+  `drag_profile` and `prelude` when it names none. Without this the engine fell
+  back to a built-in constant, so every session moved identically.
 - Evidence carries a `taken` row when a page's pipeline starts. A cross-origin widget
   is invisible to the page probe, so `goto` used to see a clean page and end the
   session mid-solve; it now waits for the verdict. A diagnostic row is never read as

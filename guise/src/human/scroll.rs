@@ -114,6 +114,25 @@ impl Default for HumanScrollConfig {
     }
 }
 
+/// One wheel step of a planned scroll: how far to turn, in which delta mode, and
+/// how long the hand waits afterwards.
+///
+/// The plan exists so the physics has one implementation and two consumers: this
+/// module dispatches it over BiDi, and a caller that cannot drive a page itself,
+/// such as a browser executing the steps internally, receives the same steps as
+/// data. A caller that re-derives its own cadence produces a second, different
+/// scroll signature for the same persona.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollStep {
+    /// Vertical delta in pixels. Sign is the scroll direction.
+    pub delta_y: f64,
+    /// `WheelEvent.deltaMode` this step belongs to: 1 for a line-mode wheel, 0
+    /// for a pixel-mode trackpad.
+    pub delta_mode: u32,
+    /// Pause after this step, in milliseconds.
+    pub after_ms: u64,
+}
+
 /// Human-like scroller driving a [`runtime_foxdriver::Page`] with momentum physics.
 pub struct HumanScroller {
     config: HumanScrollConfig,
@@ -159,6 +178,52 @@ impl HumanScroller {
         }
     }
 
+    /// The whole scroll session as data: every wheel step and the pause after it.
+    ///
+    /// Pure, so the momentum model, the overshoot, the device coherence and the
+    /// cadence are all testable without a browser, and so a consumer that dispatches
+    /// the steps itself moves exactly like the one that drives a page here.
+    #[must_use]
+    pub fn plan<R: Rng + ?Sized>(&self, rng: &mut R) -> Vec<ScrollStep> {
+        let delta_mode = u32::from(self.config.wheel_device.properties().delta_mode);
+        let line_mode = delta_mode == 1;
+        let direction: f64 = if self.config.scroll_down { 1.0 } else { -1.0 };
+        let mut steps: Vec<ScrollStep> = Vec::new();
+        for flick_px in self.distribute_flicks(rng) {
+            for delta_y in self.plan_flick_steps(flick_px * direction, rng) {
+                // Discrete wheel notches arrive far slower than a trackpad's ~60 fps
+                // pixel stream; emitting notches at frame rate would itself be a tell.
+                let after_ms = if line_mode {
+                    rng.gen_range(45..120)
+                } else {
+                    rng.gen_range(16..32)
+                };
+                steps.push(ScrollStep { delta_y, delta_mode, after_ms });
+            }
+            if chance_with_rng(self.config.behavior.overshoot_probability(), rng) {
+                let overshoot = f64::from(rng.gen_range(30..120)) * direction;
+                steps.push(ScrollStep {
+                    delta_y: overshoot,
+                    delta_mode,
+                    after_ms: rng.gen_range(100..300),
+                });
+                // Scroll back ~60-90 % of the overshoot.
+                steps.push(ScrollStep {
+                    delta_y: -overshoot * rng.gen_range(0.6_f64..0.9),
+                    delta_mode,
+                    after_ms: rng.gen_range(80..200),
+                });
+            }
+            // Pause between flicks, carried by the last step of the flick.
+            let (lo, hi) = self.config.behavior.pause_range_ms();
+            let pause = rng.gen_range(lo..hi);
+            if let Some(last) = steps.last_mut() {
+                last.after_ms = last.after_ms.saturating_add(pause);
+            }
+        }
+        steps
+    }
+
     /// Perform a full scroll session on `page` matching the configured behaviour.
     ///
     /// # Errors
@@ -168,63 +233,9 @@ impl HumanScroller {
     pub async fn scroll(&mut self, page: &Page) -> Result<()> {
         // Send-safe RNG so the future stays `Send` across the await points.
         let mut rng = StdRng::from_entropy();
-        let direction: f64 = if self.config.scroll_down { 1.0 } else { -1.0 };
-
-        // Distribute the total distance unevenly across flicks.
-        let flick_amounts = self.distribute_flicks(&mut rng);
-
-        for flick_px in flick_amounts {
-            self.execute_flick(page, flick_px * direction, &mut rng)
-                .await?;
-
-            // Possible overshoot + correction.
-            if chance_with_rng(self.config.behavior.overshoot_probability(), &mut rng) {
-                let overshoot = rng.gen_range(30..120) as f64 * direction;
-                self.scroll_by(page, overshoot).await?;
-                tokio::time::sleep(Duration::from_millis(rng.gen_range(100..300))).await;
-                // Scroll back ~60-90 % of the overshoot.
-                let correction = overshoot * rng.gen_range(0.6_f64..0.9);
-                self.scroll_by(page, -correction).await?;
-                tokio::time::sleep(Duration::from_millis(rng.gen_range(80..200))).await;
-            }
-
-            // Pause between flicks.
-            let (lo, hi) = self.config.behavior.pause_range_ms();
-            let pause = rng.gen_range(lo..hi);
-            tokio::time::sleep(Duration::from_millis(pause)).await;
-        }
-
-        Ok(())
-    }
-
-    /// Execute a single flick.
-    ///
-    /// The delta *shape* and the inter-step cadence both depend on the persona's
-    /// wheel device, so the emitted stream is coherent with the recorded
-    /// `deltaMode` (G173 / G174):
-    ///
-    /// * **Line-mode** devices (a classic mouse wheel) emit discrete, roughly
-    ///   equal notches at detent cadence. NOT a smooth decay.
-    /// * **Pixel-mode** devices (a trackpad) emit a smooth momentum-decay stream
-    ///   at ~frame rate.
-    async fn execute_flick<R: Rng + ?Sized>(
-        &mut self,
-        page: &Page,
-        target_px: f64,
-        rng: &mut R,
-    ) -> Result<()> {
-        let line_mode = self.config.wheel_device.properties().delta_mode == 1;
-        let steps = self.plan_flick_steps(target_px, rng);
-        for step in steps {
-            self.scroll_by(page, step).await?;
-            // Discrete wheel notches arrive far slower than a trackpad's ~60 fps
-            // pixel stream; emitting notches at frame rate would itself be a tell.
-            let gap = if line_mode {
-                rng.gen_range(45..120)
-            } else {
-                rng.gen_range(16..32)
-            };
-            tokio::time::sleep(Duration::from_millis(gap)).await;
+        for step in self.plan(&mut rng) {
+            self.scroll_by(page, step.delta_y).await?;
+            tokio::time::sleep(Duration::from_millis(step.after_ms)).await;
         }
         Ok(())
     }
@@ -350,6 +361,66 @@ mod tests {
     use super::*;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+
+    // ── Plan ────────────────────────────────────────────────────────────
+
+    /// The plan is what a consumer outside this module dispatches, so its
+    /// distance, direction, device coherence and cadence are the contract. A
+    /// plan whose steps carried one delta mode, one gap, or a total unrelated to
+    /// `total_px` would move nothing like the page driver in this file.
+    #[test]
+    fn a_plan_covers_the_distance_in_the_devices_own_steps() {
+        for device in [WheelDevice::MouseWheel, WheelDevice::Trackpad] {
+            for down in [true, false] {
+                let config = HumanScrollConfig {
+                    total_px: 900,
+                    behavior: ScrollBehavior::Scanning,
+                    flick_count: 4,
+                    scroll_down: down,
+                    wheel_device: device,
+                };
+                let mut rng = StdRng::seed_from_u64(7);
+                let plan = HumanScroller::new(config).plan(&mut rng);
+                assert!(plan.len() >= 4, "{device:?}: {} steps is not a session", plan.len());
+                let mode = u32::from(device.properties().delta_mode);
+                assert!(
+                    plan.iter().all(|s| s.delta_mode == mode),
+                    "{device:?}: a step disagreed with the persona's wheel device"
+                );
+                let travelled: f64 = plan.iter().map(|s| s.delta_y).sum();
+                let want = if down { 900.0 } else { -900.0 };
+                assert!(
+                    (travelled - want).abs() < 300.0,
+                    "{device:?} down={down}: travelled {travelled} for a 900 px session"
+                );
+                assert_eq!(
+                    travelled > 0.0,
+                    down,
+                    "{device:?}: the session went the wrong way"
+                );
+                let gaps: std::collections::BTreeSet<u64> =
+                    plan.iter().map(|s| s.after_ms).collect();
+                assert!(
+                    gaps.len() > 1,
+                    "{device:?}: one cadence for every step is a signature"
+                );
+                assert!(
+                    plan.iter().all(|s| s.after_ms > 0),
+                    "{device:?}: a step with no pause is a machine"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn two_sessions_do_not_share_a_plan() {
+        let scroller = || HumanScroller::new(HumanScrollConfig::default());
+        let a = scroller().plan(&mut StdRng::seed_from_u64(1));
+        let b = scroller().plan(&mut StdRng::seed_from_u64(2));
+        assert_ne!(a, b, "two seeds produced the same scroll");
+        let repeat = scroller().plan(&mut StdRng::seed_from_u64(1));
+        assert_eq!(a, repeat, "one seed produced two different scrolls");
+    }
 
     // ── ScrollBehavior parameter contracts ──────────────────────────────
 

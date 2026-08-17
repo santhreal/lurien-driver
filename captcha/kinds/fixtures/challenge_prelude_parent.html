@@ -1,0 +1,93 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>page whose widget wants a visit first</title>
+<!--
+  The page half of the `prelude` fixture.
+
+  What is being tested here is not the click. It is everything before it: whether
+  the page was scrolled, whether a pointer crossed it, and whether any time passed
+  between the load and the first pointer inside the widget. A scoring vendor reads
+  exactly that, and only the page can see it: the widget is cross-origin, so it
+  never receives the parent's wheel or the moves outside its own rectangle.
+
+  The parent therefore watches its own events and posts what it saw to the child.
+  It reports only trusted events, and only moves outside the iframe rectangle, so
+  the approach to the widget cannot be counted as reading. The child URL is
+  substituted by the harness so the halves come from different hosts.
+-->
+<style>
+  body { font: 14px system-ui; margin: 0; padding: 16px; }
+  /* Tall enough that a wheel session has somewhere to go. */
+  .filler { height: 1400px; background: linear-gradient(#fff, #eef); }
+  iframe { border: 1px solid #ccc; }
+</style>
+
+<h1>Article</h1>
+<p>Reading material, then a widget below it.</p>
+<div class="filler"></div>
+<iframe src="CHILD_URL" title="widget" width="320" height="90"></iframe>
+<div class="filler"></div>
+<div id="seen">seen: nothing yet</div>
+
+<script>
+  const loadedAt = Date.now();
+  const frame = document.querySelector("iframe");
+  const seen = document.getElementById("seen");
+  const visit = { moves: 0, wheels: 0, scrolled: 0, enteredAfterMs: null };
+
+  function outsideFrame(x, y) {
+    const r = frame.getBoundingClientRect();
+    return x < r.left || x > r.right || y < r.top || y > r.bottom;
+  }
+
+  addEventListener(
+    "mousemove",
+    event => {
+      if (!event.isTrusted) {
+        return;
+      }
+      if (outsideFrame(event.clientX, event.clientY)) {
+        visit.moves += 1;
+      } else if (visit.enteredAfterMs === null) {
+        visit.enteredAfterMs = Date.now() - loadedAt;
+      }
+      report();
+    },
+    true
+  );
+
+  addEventListener(
+    "wheel",
+    event => {
+      if (!event.isTrusted) {
+        return;
+      }
+      visit.wheels += 1;
+      // deltaMode is part of the claim: a wheel that reports pixel deltas from a
+      // persona whose hardware is a notched wheel is its own contradiction.
+      visit.deltaMode = event.deltaMode;
+      report();
+    },
+    true
+  );
+
+  addEventListener("scroll", () => {
+    visit.scrolled = Math.round(window.scrollY);
+    report();
+  });
+
+  function report() {
+    seen.textContent =
+      "seen: " + visit.moves + " moves, " + visit.wheels + " wheels, scrollY " + visit.scrolled;
+    // The child cannot read any of this, so it is handed over explicitly. A page
+    // script solver cannot forge it: every counted event had isTrusted true.
+    frame.contentWindow.postMessage({ fixture: "visit", ...visit }, "*");
+  }
+
+  // The child asks once it is ready, in case it loaded after the first events.
+  addEventListener("message", event => {
+    if (event.data === "fixture:ready") {
+      report();
+    }
+  });
+</script>
