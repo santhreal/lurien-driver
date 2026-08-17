@@ -11,15 +11,20 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(
-  join(here, "..", "..", "engine", "additions", "challenge", "PowWorker.js"),
-  "utf8"
-);
+const worker_path = join(here, "..", "..", "engine", "additions", "challenge", "PowWorker.js");
+if (!existsSync(worker_path)) {
+  // The engine is a separate repository. A checkout that does not have it beside
+  // the driver cannot run this, exactly as the Rust packaging laws are vacuous
+  // there; saying so is the difference between a skip and a failure nobody reads.
+  console.log(`SKIP: no engine checkout at ${worker_path}`);
+  process.exit(0);
+}
+const source = readFileSync(worker_path, "utf8");
 
 // The worker is a worker: it has no exports. Load its body and hand back the
 // pieces under test, which is why this file and not an import.
