@@ -33,6 +33,8 @@ pub struct Session {
     telemetry: Mutex<Option<Telemetry>>,
     /// Routes this session has added, in the order the engine tries them.
     routes: Mutex<Vec<crate::route::Route>>,
+    /// Names this session has given the frames it has seen.
+    frames: Mutex<crate::frame::Handles>,
     /// Why this session has no position state, when it has none.
     geo_refusal: Option<String>,
 }
@@ -79,6 +81,7 @@ impl Session {
             browser: Mutex::new(None),
             telemetry: Mutex::new(None),
             routes: Mutex::new(Vec::new()),
+            frames: Mutex::new(crate::frame::Handles::default()),
             geo_refusal,
         }
     }
@@ -154,6 +157,85 @@ impl Session {
     pub async fn route_report(&self) -> Result<serde_json::Value, Error> {
         let guard = self.routes.lock().await;
         Ok(report(&guard, &self.control()?.routes().await?))
+    }
+
+    /// Every frame in the page right now, each with the name this session gave
+    /// it. Reading the tree is what mints a handle, so a caller that has run
+    /// `frames` can address any of them.
+    pub async fn frame_rows(&self) -> Result<Vec<serde_json::Value>, Error> {
+        let tree = self.read_frames().await?;
+        // The tree does not carry `window.name`, which is one of the specs a
+        // caller may pass, so it is read separately and matched by context.
+        let browser = self.browser().await?;
+        if let Ok(named) = browser.page().list_frames().await {
+            let mut guard = self.frames.lock().await;
+            for frame in &named {
+                if !frame.name.is_empty() {
+                    guard.set_name(&frame.id, &frame.name);
+                }
+            }
+        }
+        let guard = self.frames.lock().await;
+        Ok(tree
+            .iter()
+            .map(|node| {
+                let context = node.id.as_ref();
+                serde_json::json!({
+                    "handle": guard.handle_for(context),
+                    "id": context,
+                    "url": node.url,
+                    "name": guard.slot_for(context).map_or("", |slot| slot.name.as_str()),
+                    "parent": node.parent.as_ref().map(AsRef::<str>::as_ref),
+                    "depth": node.depth,
+                    "is_main": node.depth == 0,
+                })
+            })
+            .collect())
+    }
+
+    /// Turn what a caller wrote into something the engine can resolve.
+    ///
+    /// A handle is looked up in this session's table; anything else is the
+    /// engine's own spec language (id, `index:`, `url:`, `name:`, `main`) and
+    /// passes through untouched.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::BadArgs`] when a handle names a frame that is gone or a frame
+    /// this session never saw. Neither is resolved to a different frame: acting
+    /// on the wrong document is the failure a handle exists to prevent.
+    pub async fn frame_target(&self, verb: &str, spec: &str) -> Result<String, Error> {
+        let Some(handle) = crate::frame::parse_handle(spec) else {
+            return Ok(spec.to_string());
+        };
+        // A handle may be older than the last time anything read the tree, so the
+        // table is refreshed before it is believed either way.
+        self.read_frames().await?;
+        let guard = self.frames.lock().await;
+        match guard.slot(handle) {
+            Some(slot) if slot.live => Ok(slot.context.clone()),
+            Some(slot) => Err(crate::frame::gone(verb, slot)),
+            None => Err(crate::frame::unknown(verb, handle, guard.slots())),
+        }
+    }
+
+    /// The live tree, with the table brought up to date from it.
+    async fn read_frames(&self) -> Result<Vec<runtime_foxdriver::FrameTreeNode>, Error> {
+        let browser = self.browser().await?;
+        // The tree, not the driver's context list: a frame the page removed is
+        // still in that list, and a handle that resolved off it would address a
+        // context the browser has already dropped.
+        let tree = browser
+            .page()
+            .frame_tree()
+            .await
+            .map_err(|e| Error::Other(format!("reading the frame tree: {e}")))?;
+        let live: Vec<(String, String)> = tree
+            .iter()
+            .map(|node| (node.id.as_ref().to_string(), node.url.clone()))
+            .collect();
+        self.frames.lock().await.refresh(&live);
+        Ok(tree)
     }
 
     /// Launch options this session will use.

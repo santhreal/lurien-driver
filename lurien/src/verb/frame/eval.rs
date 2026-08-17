@@ -12,7 +12,7 @@ pub static SPEC: VerbSpec = VerbSpec {
     summary: "Evaluate JavaScript in the main document or a named frame. An expression that returns a promise is awaited.",
     args: &[
         ArgSpec { name: "script", ty: ArgType::Str, required: true, default: None, help: "Expression to evaluate." },
-        ArgSpec { name: "frame", ty: ArgType::Str, required: false, default: None, help: "Frame target: id, url substring, name, or main." },
+        ArgSpec { name: "frame", ty: ArgType::Str, required: false, default: None, help: "Frame target: a frames handle like f2, an id, index:<n>, url:<substr>, name:<name>, or main." },
     ],
     output: OutputKind::Json,
     stability: Stability::Stable,
@@ -30,11 +30,14 @@ async fn run(session: &Session, args: &Args) -> Result<Output, Error> {
     // ask a page a question, and an opaque promise handle would make every async
     // probe a two-step dance.
     let result = match args.opt_str("frame") {
-        Some(spec) => browser
-            .page()
-            .eval_in_frame_await(spec, script)
-            .await
-            .map_err(|e| Error::Other(format!("eval in {spec}: {e}")))?,
+        Some(spec) => {
+            let target = session.frame_target(SPEC.name, spec).await?;
+            browser
+                .page()
+                .eval_in_frame_await(&target, script)
+                .await
+                .map_err(|e| Error::Other(format!("eval in {spec}: {e}")))?
+        }
         None => browser
             .page()
             .evaluate_await(script)

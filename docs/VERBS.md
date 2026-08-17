@@ -51,7 +51,7 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 | `click-in` | `frame`, `selector` | text | stable | Click a selector inside a named frame, including a cross-origin one. |
 | `eval` | `script`, `frame?` | json | stable | Evaluate JavaScript in the main document or a named frame. An expression that returns a promise is awaited. |
 | `frame-tree` | - | json | stable | Browsing-context tree with parent and depth, including OOPIFs. |
-| `frames` | - | json | stable | List browsing contexts (main document and every iframe). |
+| `frames` | - | json | stable | List browsing contexts with a stable handle each: main document first, then every iframe. |
 | `type-in` | `frame`, `selector`, `text` | text | stable | Focus a selector inside a named frame and type into it. |
 
 ## storage

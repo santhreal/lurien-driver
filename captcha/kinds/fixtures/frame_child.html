@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>frame child</title>
+</head>
+<body>
+<p id="pass"></p>
+<input id="field" value="">
+<button id="go" onclick="window.lurienClicked = true">go</button>
+<script>
+// Which navigation this document is, read from its own URL, so a caller can tell
+// one load of this frame from the next.
+window.lurienPass = new URLSearchParams(location.search).get("pass") || "0";
+document.getElementById("pass").textContent = `pass ${window.lurienPass}`;
+window.lurienClicked = false;
+window.lurienState = () => ({
+  pass: window.lurienPass,
+  url: document.URL,
+  typed: document.getElementById("field").value,
+  clicked: window.lurienClicked === true,
+});
+</script>
+</body>
+</html>

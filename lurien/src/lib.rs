@@ -29,6 +29,7 @@ pub mod clock;
 pub mod control;
 pub mod download;
 pub mod error;
+pub mod frame;
 pub mod geo;
 pub mod goto;
 pub mod launch;

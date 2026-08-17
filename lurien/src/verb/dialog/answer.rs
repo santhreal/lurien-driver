@@ -13,7 +13,7 @@ pub static SPEC: VerbSpec = VerbSpec {
     args: &[
         ArgSpec { name: "action", ty: ArgType::Str, required: true, default: None, help: "accept or dismiss." },
         ArgSpec { name: "text", ty: ArgType::Str, required: false, default: None, help: "Text for a prompt() dialog." },
-        ArgSpec { name: "frame", ty: ArgType::Str, required: false, default: None, help: "Frame target owning the dialog. Defaults to the main document." },
+        ArgSpec { name: "frame", ty: ArgType::Str, required: false, default: None, help: "Frame target owning the dialog: a frames handle like f2, an id, index:<n>, url:<substr>, or name:<name>. Defaults to the main document." },
     ],
     output: OutputKind::Text,
     stability: Stability::Stable,
@@ -47,7 +47,7 @@ async fn run(session: &Session, args: &Args) -> Result<Output, Error> {
         Some(spec) => Some(
             browser
                 .page()
-                .resolve_frame(spec)
+                .resolve_frame(&session.frame_target(SPEC.name, spec).await?)
                 .await
                 .map_err(|e| Error::Other(format!("dialog frame {spec}: {e}")))?,
         ),

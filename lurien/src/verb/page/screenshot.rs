@@ -19,7 +19,7 @@ pub static SPEC: VerbSpec = VerbSpec {
         ArgSpec { name: "full_page", ty: ArgType::Bool, required: false, default: Some("false"), help: "Capture the whole scrollable document instead of the viewport." },
         ArgSpec { name: "clip", ty: ArgType::Str, required: false, default: None, help: "Rectangle to capture: x,y,width,height in CSS pixels from the document top-left." },
         ArgSpec { name: "selector", ty: ArgType::Str, required: false, default: None, help: "Capture just this element. CSS, or a role:/text:/label:/placeholder:/testid:/ref: form." },
-        ArgSpec { name: "frame", ty: ArgType::Str, required: false, default: None, help: "Capture this frame's own document: a frames id, index:<n>, url:<substr>, or name:<name>." },
+        ArgSpec { name: "frame", ty: ArgType::Str, required: false, default: None, help: "Capture this frame's own document: a frames handle like f2, an id, index:<n>, url:<substr>, or name:<name>." },
         crate::verb::TIMEOUT_ARG,
     ],
     output: OutputKind::Png,
@@ -57,7 +57,10 @@ async fn run(session: &Session, args: &Args) -> Result<Output, Error> {
 
     let browser = session.browser().await?;
     let page = browser.page();
-    let frame = args.opt_str("frame").map(str::to_string);
+    let frame = match args.opt_str("frame") {
+        Some(spec) => Some(session.frame_target(SPEC.name, spec).await?),
+        None => None,
+    };
     let context = match &frame {
         Some(spec) => Some(
             page.resolve_frame(spec)

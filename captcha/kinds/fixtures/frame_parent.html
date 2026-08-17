@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>frame handles</title>
+</head>
+<body>
+<h1>frame handles</h1>
+<iframe id="child" name="worker" src="CHILD_URL?pass=1" width="320" height="200"></iframe>
+<script>
+// The frame is navigated and removed from the parent so a handle can be tested
+// against the two things that change a frame's identity to a caller.
+window.lurienNavigate = (pass) => {
+  const frame = document.getElementById("child");
+  const base = frame.getAttribute("src").split("?")[0];
+  frame.setAttribute("src", `${base}?pass=${pass}`);
+  return base;
+};
+window.lurienDropFrame = () => {
+  const frame = document.getElementById("child");
+  if (!frame) return false;
+  frame.remove();
+  return true;
+};
+window.lurienAddFrame = (url) => {
+  const frame = document.createElement("iframe");
+  frame.id = "second";
+  frame.name = "later";
+  frame.src = url;
+  document.body.appendChild(frame);
+  return true;
+};
+</script>
+</body>
+</html>

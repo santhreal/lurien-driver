@@ -189,6 +189,15 @@
 - A header whose value is a URL now goes through the same query redaction as a
   request URL. `Location` after an OAuth hop carried a one-time code past the
   redaction in `net`.
+- Frames have stable handles. `frames` reports `f1`, `f2` and so on next to each
+  context, with its url, parent and depth, and every verb that takes a frame
+  (`eval`, `click-in`, `type-in`, `screenshot`, `dialog`) accepts one. A handle is
+  minted once per context and never reused, so it still names the same frame after
+  that frame navigates, where an index shifts and a url substring silently matches
+  a different document. A handle whose frame is gone is refused, naming the url it
+  had and the verb to run, rather than resolving to whatever is in that slot now.
+  The table is refreshed from the browser's own tree, not from a cached context
+  list, so a frame the page removed reads as gone.
 - A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
   `drag_profile` and `prelude` when it names none. Without this the engine fell
   back to a built-in constant, so every session moved identically.

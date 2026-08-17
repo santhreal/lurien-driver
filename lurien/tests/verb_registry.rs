@@ -215,6 +215,26 @@ fn a_required_argument_never_has_a_default() {
     }
 }
 
+/// A frame argument that does not advertise the handle sends the caller back to
+/// an index or a URL, which is the identity that moves under a run. Derived from
+/// the registry, so a verb that takes a frame tomorrow is held to it too.
+#[test]
+fn every_frame_argument_offers_a_stable_handle() {
+    let mut checked = 0;
+    for spec in verb::registry() {
+        for arg in spec.args.iter().filter(|arg| arg.name == "frame") {
+            checked += 1;
+            assert!(
+                arg.help.contains("handle"),
+                "{}: the frame argument does not offer a handle: {:?}",
+                spec.name,
+                arg.help
+            );
+        }
+    }
+    assert!(checked >= 4, "only {checked} verbs take a frame; the law found nothing to hold");
+}
+
 #[test]
 fn every_verb_file_is_registered_in_its_domain() {
     // A verb file that nobody added to `SPECS` is dead code that looks shipped.

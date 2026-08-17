@@ -9,7 +9,7 @@ pub static SPEC: VerbSpec = VerbSpec {
     name: "frames",
     aliases: &["frame.list"],
     domain: Domain::Frame,
-    summary: "List browsing contexts (main document and every iframe).",
+    summary: "List browsing contexts with a stable handle each: main document first, then every iframe.",
     args: &[],
     output: OutputKind::Json,
     stability: Stability::Stable,
@@ -21,12 +21,9 @@ fn call<'a>(session: &'a Session, args: &'a Args) -> VerbFuture<'a> {
 }
 
 async fn run(session: &Session, _args: &Args) -> Result<Output, Error> {
-    let browser = session.browser().await?;
-    let frames = browser
-        .page()
-        .list_frames()
-        .await
-        .map_err(|e| Error::Other(format!("frames: {e}")))?;
+    // Reading the tree is what names a frame, so a caller that has run this verb
+    // can address any frame in it by a handle that will not move.
+    let frames = session.frame_rows().await?;
     Ok(Output::Json(serde_json::json!({
         "count": frames.len(),
         "frames": frames,
