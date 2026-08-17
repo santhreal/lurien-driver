@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>visual host page</title>
+<!--
+  The page half of the `visual` fixture. The grid is served from a different host,
+  so the browser gives it its own browsing context in its own process: the parent
+  cannot read the tiles, cannot measure them, and its clicks land in the wrong
+  process. That is the shape every tile deployment has.
+
+  CHILD_URL is substituted by lurien/tests/e2e_visual.sh.
+-->
+<style>
+  body { font: 14px system-ui; margin: 0; padding: 24px; }
+  /* The whole widget fits, as a vendor's own frame does: a grid half below the
+     fold is a separate case, and the engine scrolls it into view. */
+  iframe { width: 400px; height: 560px; border: 1px solid #ccc; }
+</style>
+
+<h1>Verification required</h1>
+<p>Pick the matching pictures to continue.</p>
+<iframe src="CHILD_URL" title="visual widget"></iframe>
+<div id="parent-state">the parent cannot read the widget</div>
+
+<script>
+  // The parent reaching into the widget must throw, or the fixture is not
+  // cross-origin and proves nothing about the context the engine had to reach.
+  const frame = document.querySelector("iframe");
+  frame.addEventListener("load", () => {
+    try {
+      const reached = frame.contentDocument?.getElementById("grid");
+      document.getElementById("parent-state").textContent = reached
+        ? "same origin: this fixture is misconfigured"
+        : "the parent cannot read the widget";
+    } catch (e) {
+      document.getElementById("parent-state").textContent = "the parent cannot read the widget";
+    }
+  });
+</script>

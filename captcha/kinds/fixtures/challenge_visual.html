@@ -1,0 +1,175 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>pick the pictures</title>
+<!--
+  The `visual` fixture: a tile grid whose question, layout and answer are minted
+  per load.
+
+  The token is written only when all of these hold:
+
+    - every tile holding the asked-for shape was clicked and no other tile was, so
+      the set came from looking at the pictures rather than from clicking
+      everything or guessing one,
+    - every click was trusted, so a dispatched MouseEvent is refused,
+    - the selections are spread in time, at least 40 ms apart, so nine clicks in
+      one millisecond are refused,
+    - the verify press is trusted and comes after the selections.
+
+  The shapes are drawn here rather than fetched, so the fixture needs no network
+  and no image corpus, and a solver cannot recognize a file name instead of a
+  picture.
+-->
+<style>
+  body { font: 14px system-ui; margin: 0; padding: 14px; background: #fff; }
+  #prompt { margin: 0 0 10px; font-weight: 600; }
+  #grid {
+    display: grid; grid-template-columns: repeat(3, 108px);
+    gap: 6px; width: max-content; background: #fff;
+  }
+  .tile {
+    box-sizing: border-box; width: 108px; height: 108px;
+    border: 1px solid #ccc; cursor: pointer;
+  }
+  .tile canvas { display: block; }
+  .tile.picked { outline: 3px solid #2a6; outline-offset: -3px; }
+  #verify { margin-top: 10px; font: inherit; padding: 4px 12px; }
+  #state { margin-top: 8px; }
+</style>
+
+<p id="prompt"></p>
+<!--
+  A second question, for a shape this fixture never draws. Nothing reads it unless
+  a proof points a binding's prompt selector at it, which is how a run checks that
+  an unanswerable question is refused rather than answered with a guessed tile.
+-->
+<p id="decoy">Select all images with a yellow star</p>
+<div id="grid"></div>
+<button id="verify">Verify</button>
+<input type="hidden" name="fixture-token" value="">
+<div id="state">waiting</div>
+
+<script>
+  const SIDE = 106;
+
+  /** The shapes a tile can hold. Distinct in colour and in outline. */
+  const KINDS = [
+    {
+      name: "red circle",
+      draw(ctx) {
+        ctx.fillStyle = "#d0202a";
+        ctx.beginPath();
+        ctx.arc(SIDE / 2, SIDE / 2, SIDE * 0.36, 0, Math.PI * 2);
+        ctx.fill();
+      },
+    },
+    {
+      name: "blue square",
+      draw(ctx) {
+        ctx.fillStyle = "#1b45c8";
+        const s = SIDE * 0.62;
+        ctx.fillRect((SIDE - s) / 2, (SIDE - s) / 2, s, s);
+      },
+    },
+    {
+      name: "green triangle",
+      draw(ctx) {
+        ctx.fillStyle = "#1c8a3c";
+        const h = SIDE * 0.66;
+        ctx.beginPath();
+        ctx.moveTo(SIDE / 2, (SIDE - h) / 2);
+        ctx.lineTo(SIDE / 2 + h * 0.6, (SIDE + h) / 2);
+        ctx.lineTo(SIDE / 2 - h * 0.6, (SIDE + h) / 2);
+        ctx.closePath();
+        ctx.fill();
+      },
+    },
+  ];
+
+  const pick = list => list[Math.floor(Math.random() * list.length)];
+
+  // The question, and how many tiles answer it: between two and four, so a solver
+  // that always picks one cell, or always picks them all, is wrong either way.
+  const wanted = pick(KINDS);
+  const others = KINDS.filter(kind => kind !== wanted);
+  const matches = 2 + Math.floor(Math.random() * 3);
+  const layout = [];
+  for (let i = 0; i < 9; i++) {
+    layout.push(i < matches ? wanted : pick(others));
+  }
+  for (let i = layout.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [layout[i], layout[j]] = [layout[j], layout[i]];
+  }
+  const truth = layout
+    .map((kind, index) => (kind === wanted ? index : -1))
+    .filter(index => index >= 0);
+
+  const prompt = document.getElementById("prompt");
+  const grid = document.getElementById("grid");
+  const verify = document.getElementById("verify");
+  const token = document.querySelector('input[name="fixture-token"]');
+  const state = document.getElementById("state");
+
+  prompt.textContent = `Select all images with a ${wanted.name}`;
+
+  const picked = [];
+  const at = [];
+  let untrusted = false;
+
+  layout.forEach((kind, index) => {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    const canvas = document.createElement("canvas");
+    canvas.width = SIDE;
+    canvas.height = SIDE;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, SIDE, SIDE);
+    kind.draw(ctx);
+    tile.append(canvas);
+    tile.addEventListener("click", event => {
+      if (!event.isTrusted) {
+        untrusted = true;
+        return;
+      }
+      if (picked.includes(index)) {
+        return;
+      }
+      picked.push(index);
+      at.push(performance.now());
+      tile.classList.add("picked");
+      state.textContent = `picked ${picked.length}`;
+    });
+    grid.append(tile);
+  });
+
+  /** Were these selections made one at a time, the way a hand makes them? */
+  function paced() {
+    for (let i = 1; i < at.length; i++) {
+      const gap = at[i] - at[i - 1];
+      if (gap < 40) {
+        return `${Math.round(gap)} ms between two selections is one gesture`;
+      }
+    }
+    return null;
+  }
+
+  verify.addEventListener("click", event => {
+    if (!event.isTrusted || untrusted) {
+      state.textContent = "refused: untrusted pointer";
+      return;
+    }
+    const complaint = paced();
+    if (complaint) {
+      state.textContent = `refused: ${complaint}`;
+      return;
+    }
+    const ordered = [...picked].sort((a, b) => a - b);
+    if (ordered.length !== truth.length || ordered.some((index, i) => index !== truth[i])) {
+      state.textContent = `wrong: picked ${ordered.join(",") || "nothing"}, wanted ${truth.join(",")}`;
+      return;
+    }
+    token.value = `fixture-visual-${wanted.name.replace(" ", "-")}-${truth.join(",")}`;
+    state.textContent = "solved";
+  });
+</script>
