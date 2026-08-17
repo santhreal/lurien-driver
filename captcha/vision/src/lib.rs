@@ -65,6 +65,13 @@ pub fn decode_png(bytes: &[u8]) -> Result<Gray, String> {
     Ok(Gray::new(width, height, pixels))
 }
 
+/// Pixels a cell may hang over the edge of the crop before it is refused.
+///
+/// A rectangle measured in CSS pixels and a crop taken at a device scale disagree
+/// by rounding on every side. One pixel of slack is that rounding; more than that
+/// is a widget that was not fully on screen.
+const EDGE: i64 = 1;
+
 /// The helper's state: a model, once something asks for one.
 ///
 /// The weights are hundreds of megabytes and take seconds to open, so they are
@@ -144,6 +151,33 @@ impl Helper {
         } else {
             1.0
         };
+        // Every rectangle is checked before a model is opened: a request that names
+        // a cell the picture does not hold is malformed, and proving that costs no
+        // weights.
+        let mut rects = Vec::with_capacity(request.cells.len());
+        for (index, cell) in request.cells.iter().enumerate() {
+            let x = (cell.x * scale).round() as i64;
+            let y = (cell.y * scale).round() as i64;
+            let w = (cell.w * scale).round() as i64;
+            let h = (cell.h * scale).round() as i64;
+            // A cell that reaches past the crop would be answered from whatever
+            // pixels are inside it, which is a confident answer about a different
+            // tile. The caller sent rectangles for a widget that was partly off
+            // screen, and that is a refusal, not a guess.
+            let over = x < -EDGE
+                || y < -EDGE
+                || x + w > image.width() as i64 + EDGE
+                || y + h > image.height() as i64 + EDGE;
+            if over {
+                return proto::Reply::refused(format!(
+                    "cell {index} at {x},{y} {w}x{h} reaches past the {}x{} crop; \
+                     the widget was not fully in the picture that was sent",
+                    image.width(),
+                    image.height()
+                ));
+            }
+            rects.push((x, y, w, h));
+        }
         let model = match self.model() {
             Ok(model) => model,
             Err(e) => return proto::Reply::refused(e),
@@ -157,14 +191,9 @@ impl Helper {
                 Err(e) => return proto::Reply::refused(e),
             }
         }
-        let mut shares = Vec::with_capacity(request.cells.len());
-        for cell in &request.cells {
-            let crop = match image.crop(
-                (cell.x * scale).round() as i64,
-                (cell.y * scale).round() as i64,
-                (cell.w * scale).round() as i64,
-                (cell.h * scale).round() as i64,
-            ) {
+        let mut shares = Vec::with_capacity(rects.len());
+        for (x, y, w, h) in rects {
+            let crop = match image.crop(x, y, w, h) {
                 Ok(crop) => crop,
                 Err(e) => return proto::Reply::refused(e),
             };
@@ -307,6 +336,63 @@ mod tests {
         }))
         .expect("request")
     }
+
+    /// A grid request over a plain crop, with the cells the caller names.
+    fn grid_request(prompt: &str, cells: serde_json::Value) -> proto::Request {
+        let image = Gray::new(120, 120, vec![200; 120 * 120]);
+        serde_json::from_value(serde_json::json!({
+            "kind": "visual",
+            "task": "cells",
+            "png": base64_encode(&png_bytes(&image)),
+            "width": 120.0,
+            "height": 120.0,
+            "prompt": prompt,
+            "cells": cells,
+        }))
+        .expect("request")
+    }
+
+    #[test]
+    fn a_cell_that_reaches_past_the_crop_is_refused_before_a_model_is_needed() {
+        // The rectangle names pixels the picture does not hold, which happens when
+        // the widget was partly off screen. Cropping to what is there would answer
+        // about a neighbouring tile, and the refusal has to say so without the cost
+        // of opening a model.
+        let request = grid_request(
+            "Select all images with a bicycle",
+            serde_json::json!([{ "x": 60.0, "y": 60.0, "w": 80.0, "h": 80.0 }]),
+        );
+        let error = helper().answer(&request).error.expect("a refusal");
+        assert!(error.contains("reaches past"), "{error}");
+        assert!(error.contains("120x120"), "the refusal does not name the crop: {error}");
+        assert!(!error.contains("--model"), "the model was opened for a malformed request: {error}");
+    }
+
+    #[test]
+    fn a_grid_with_a_readable_request_and_no_model_names_the_missing_model() {
+        let request = grid_request(
+            "Select all images with a bicycle",
+            serde_json::json!([{ "x": 0.0, "y": 0.0, "w": 60.0, "h": 60.0 }]),
+        );
+        let error = helper().answer(&request).error.expect("a refusal");
+        assert!(error.contains("--model"), "{error}");
+        assert!(error.contains(clip::MODEL_ENV), "{error}");
+    }
+
+    #[test]
+    fn a_prompt_that_asks_for_nothing_is_refused_by_the_prompt() {
+        let request = grid_request("the", serde_json::json!([{ "x": 0.0, "y": 0.0, "w": 10.0, "h": 10.0 }]));
+        let error = helper().answer(&request).error.expect("a refusal");
+        assert!(error.contains("prompt"), "{error}");
+    }
+
+    #[test]
+    fn a_grid_with_no_cells_is_refused_rather_than_answered_empty() {
+        let request = grid_request("Select all images with a bicycle", serde_json::json!([]));
+        let error = helper().answer(&request).error.expect("a refusal");
+        assert!(error.contains("no cells"), "{error}");
+    }
+
 
     #[test]
     fn a_png_crop_round_trips_into_an_axis() {
