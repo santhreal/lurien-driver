@@ -2102,6 +2102,15 @@ fn resolve_firefox_binary(explicit: Option<String>) -> Result<String> {
     ))
 }
 
+/// How many times a launch is attempted before the error is the caller's.
+///
+/// The attach is the fragile step and it cannot be retried on a live browser: a
+/// `session.new` that timed out was still created, and a BiDi browser allows one
+/// session, so a second attempt on the same process is refused as a duplicate. A
+/// fresh process on a fresh port has no session to collide with, which is why the
+/// retry is a relaunch and not a reconnect.
+const LAUNCH_ATTEMPTS: usize = 3;
+
 /// Launch Firefox where **foxdriver owns the spawn and the readiness wait**, then
 /// attaches over BiDi in rustenium `Remote` mode.
 ///
@@ -2109,17 +2118,32 @@ fn resolve_firefox_binary(explicit: Option<String>) -> Result<String> {
 /// fixed 500 ms after exec before connecting to the BiDi WebSocket. That races any
 /// build whose remote agent binds slowly, a freshly-built lurien takes
 /// ~1 s, yielding a `ConnectionRefused` panic. Here foxdriver spawns the process,
-/// polls the debugging port until it actually accepts a connection (Law-7:
-/// readiness, never a fixed sleep), and only then hands rustenium an already-live
-/// port via [`FirefoxLaunchMode::Remote`]. The spawned [`std::process::Child`] is
-/// owned by the returned [`Page`] and killed on `close`/drop.
+/// waits until the remote agent answers a command (Law-7: readiness, never a fixed
+/// sleep), and only then hands rustenium an already-live port via
+/// [`FirefoxLaunchMode::Remote`]. The spawned [`std::process::Child`] is owned by
+/// the returned [`Page`] and killed on `close`/drop.
 ///
 /// `config.executable_path` is resolved via [`resolve_firefox_binary`], the
 /// explicit path if set, else PATH / standard install locations (this path never
 /// auto-downloads Firefox).
 pub async fn launch_firefox_self_managed(config: FoxBrowserConfig) -> Result<Page> {
     let exe = resolve_firefox_binary(config.executable_path.clone())?;
+    let mut last = None;
+    for attempt in 1..=LAUNCH_ATTEMPTS {
+        match attach_one_browser(&config, &exe).await {
+            Ok(page) => return Ok(page),
+            Err(e) => {
+                tracing::warn!("browser launch attempt {attempt} failed: {e}");
+                last = Some(e);
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow!("browser launch was never attempted")))
+}
 
+/// One spawn, one readiness wait, one attach. The child is reaped on every failure
+/// path so a retry does not leave a browser behind.
+async fn attach_one_browser(config: &FoxBrowserConfig, exe: &str) -> Result<Page> {
     let host = "127.0.0.1".to_string();
     let port = reserve_local_port()?;
 
@@ -2189,27 +2213,18 @@ pub async fn launch_firefox_self_managed(config: FoxBrowserConfig) -> Result<Pag
         .spawn()
         .map_err(|e| anyhow!("failed to spawn browser {exe:?}: {e}"))?;
 
-    // Poll the debugging port until it accepts a connection, or time out. This is
-    // the wait rustenium's fixed 500 ms sleep gets wrong for slow-binding builds.
-    let addr: std::net::SocketAddr = format!("{host}:{port}")
-        .parse()
-        .map_err(|e| anyhow!("bad debug addr {host}:{port}: {e}"))?;
-    let start = std::time::Instant::now();
-    let ready_timeout = std::time::Duration::from_secs(30);
-    loop {
-        if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(250))
-            .is_ok()
-        {
-            break;
-        }
-        if start.elapsed() >= ready_timeout {
-            terminate_and_reap(child);
-            return Err(anyhow!(
-                "browser debug port {port} never came up within {}s, the spawn likely failed (check {exe:?})",
-                ready_timeout.as_secs()
-            ));
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    // Wait for the remote agent to answer a command, not merely for its socket to
+    // exist. Gecko binds the port well before its agent answers anything, and
+    // rustenium's `session.new` allows a hardcoded five seconds: on a loaded host
+    // those five seconds expire against a browser that is starting normally, and a
+    // healthy launch is reported as a failure. `session.status` needs no session,
+    // so asking it first moves the wait to where it can be bounded honestly.
+    let ready_timeout = std::time::Duration::from_secs(60);
+    if let Err(e) = crate::ready::wait_until_ready(&host, port, ready_timeout).await {
+        terminate_and_reap(child);
+        return Err(anyhow!(
+            "the browser never became ready to drive (check {exe:?}): {e}"
+        ));
     }
 
     // Attach over BiDi to the already-live port (no spawn, no fixed-sleep race).
@@ -2217,11 +2232,10 @@ pub async fn launch_firefox_self_managed(config: FoxBrowserConfig) -> Result<Pag
     // A SINGLE attach: rustenium's `BidiSession::new` waits a hardcoded 5 s for
     // the `session.new` response and PANICS on timeout, but the session is still
     // CREATED on the browser, and a BiDi browser allows only one active session,
-    // so a retry just hits "Maximum number of active sessions". The right lever is
-    // therefore to give the engine enough head start that its single `session.new`
-    // answers within that window (see the post-readiness settle below), not to
-    // retry. The attach runs in a task so a timeout surfaces as a clean error
-    // instead of unwinding this function.
+    // so a retry just hits "Maximum number of active sessions". The lever is
+    // therefore the readiness question above, which spends the wait before that
+    // clock starts. The attach runs in a task so a timeout surfaces as a clean
+    // error instead of unwinding this function.
     let cfg = FirefoxConfig {
         host: Some(host.clone()),
         capabilities: {

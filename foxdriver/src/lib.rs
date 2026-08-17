@@ -76,6 +76,7 @@ pub mod dialog;
 pub mod frame;
 pub mod frame_graph;
 pub mod network;
+pub mod ready;
 pub mod runtime;
 pub mod sensors;
 
