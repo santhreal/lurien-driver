@@ -123,12 +123,13 @@ Proof: `lurien/tests/e2e_geo.sh`, `e2e_clock.sh`.
 
 - `audio` is refused. It has primitives in the engine and no scorecard row, so the
   solver names it rather than reporting a pass.
-- `visual` is claimed against a fixture grid and needs a local CLIP model. The
+- `visual` is claimed against a fixture grid and needs a local object detector. The
   shipped vendor bindings for it carry no `[grid]` table, so a live hCaptcha,
   reCAPTCHA or Arkose grid is recognized and then refused by name. The measured
-  reason is in the scorecard: the selectors are known, whole-tile captioning is not
-  accurate enough on a noised street photograph, and hCaptcha no longer renders a
-  tile grid at all.
+  reason is in the scorecard: the detector answers a live reCAPTCHA crop exactly, but
+  a live binding still needs to press the anchor that opens the grid in another
+  browsing context and to answer the rounds that follow, and hCaptcha no longer
+  renders a tile grid at all.
 - Live-vendor rows exist for `none` and `score`. The interactive kinds are proven
   by fixtures, which prove the mechanism and not the arms race.
 - Matched-host Linux Firefox only. A cross-OS persona is refused, because fonts,

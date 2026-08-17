@@ -26,7 +26,7 @@ and the row rewritten. A proof belongs to a build, not to a feature.
 | `score` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | observed in 6994 ms across 2 contexts, `via: field`, widget never touched; a 4000 ms budget refused a vendor that answered later | `lurien/tests/e2e_score.sh`; the widget writes its token on its own schedule in its own context and refuses outright if a trusted press or key reaches it, which is what a misclassified scoring page would produce |
 | `score` | live vendor | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | vendor wrote its token, no interaction | managed deployment at `demo.turnstile.workers.dev` reports `{"kind":"score"}`; the observer folded to `none` because the token was already written |
 | `checkbox` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | solved in 7088 ms across 2 contexts, `via: field`; most of that is the visit the vendor is owed before the click | `lurien/tests/e2e_challenge.sh`; the widget refuses an untrusted click and a click with fewer than three trusted pointer moves |
-| `visual` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 3 tiles of 9 named for "Select all images with a blue square", clicked and accepted, whole page 13758 ms, `via: field`; a question the classifier cannot answer was refused with every tile's share | `lurien/tests/e2e_visual.sh`; the target shape and the matching tiles are minted per load, the widget accepts only trusted clicks in its own context, and the exact set must match. A helper started with no classifier refuses by name rather than guessing |
+| `visual` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 16 questions over 8 visits, every set exact: 2 to 4 tiles of 9 named, clicked and accepted, one run 3 tiles for "Select all images with a red circle" in 13799 ms, `via: field`; a question the grid does not answer was refused with every tile's score | `lurien/tests/e2e_visual.sh`; the target shape and the matching tiles are minted per load, the widget accepts only trusted clicks in its own context, and the exact set must match. A helper started with no model refuses by name rather than guessing. `captcha/vision/tests/grid_detection.rs` answers the same geometry offline, including the tile-sized boxes a bordered tile produces |
 | `pow` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 4 hex zeros cleared in 143 hashes across 7 lanes, typed and accepted, whole page 9689 ms, `via: field` | `lurien/tests/e2e_pow.sh`; the page mints a fresh challenge and a random difficulty per load and accepts only a digest it verified itself, typed key by key with trusted events. `lurien/tests/pow_sha256.mjs` pins the worker digest against a reference implementation |
 | `slider` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | notch measured from pixels, 259 px travel dragged in 20 moves, accepted, whole page 4791 ms, `via: field` | `lurien/tests/e2e_slider.sh`; the notch moves every load, the widget refuses a travel with fewer than eight moves, one step size, no correction, or under 80 ms, and the same run with an evenly spaced profile is refused. `captcha/vision/tests/real_crop.rs` pins the measurement against a crop the browser rendered |
 | `fail` | n/a | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | typed error, no fabricated token | `tests/verb_fail_closed.rs` |
@@ -107,23 +107,31 @@ The `visual` fixture rules out a grid answered without looking:
 - The engine answers with tile indices, not coordinates. The context that measured
   the grid re-locates the index-th cell to click it, so no coordinate crosses a
   process boundary and a rectangle that moved cannot be clicked anyway.
-- The third phase points the binding's prompt at a question the classifier cannot
-  answer, "Select all images with a yellow star", and requires a refusal that quotes
-  the question and every tile's share. The fourth starts the helper with no
-  classifier and requires a refusal naming the model it was not given.
-- Measured on 2026-08-17 against engine 150.0.2-beta.25 and driver 0.1.0: "Select
-  all images with a blue square" answered as tiles 3, 5, and 7 of 9, each chosen
-  tile holding a share of 0.998 against at most 0.151 for the rest, confidence
-  0.998, whole page 13758 ms, 14 trusted moves and 8 wheel events in the visit,
-  pacing deck entry 4. The second visit asked for a green triangle and answered 2
-  and 4.
-- Three mutations were checked. Cropping the box measured before the widget was
-  scrolled into view put seven tiles of nine above the threshold, because the
-  picture and the cell rectangles no longer shared an origin, and the exact-set
-  fixture refused the run; clamping a cell that reaches past the crop instead of
-  refusing it turned the helper's bounds test red; dropping the pacing deck deal
-  left `dyn.grid` unnamed, which turned phase one red with the answer still
-  accepted, so the pacing claim is held by the deck and not by the solve.
+- The third phase points the binding's prompt at a question nothing in the grid
+  answers, "Select all images with a yellow star", and requires a refusal that quotes
+  the question and every tile's score. The fourth starts the helper with no model and
+  requires a refusal naming the model it was not given.
+- Measured on 2026-08-17 against engine 150.0.2-beta.25 and driver 0.1.0, over eight
+  visits and the sixteen questions they answered, every set was exact. One run: "Select
+  all images with a red circle" answered as tiles 0, 2 and 8 of 9 with confidence
+  0.600, whole page 13799 ms, and the same page asked again answered four tiles. The
+  chosen tiles scored 0.26 to 0.68 and no other tile passed 0.094. Sets of two, three
+  and four tiles were graded, and all three shapes were asked for.
+- The grid costs one model pass, not one per tile: the detector looks at the whole
+  crop once, about a second on this host after a first load of about four.
+- Three mutations were checked. Reading a box that fills its cell as evidence about
+  the cell's contents answered "a blue square" with four tiles of nine instead of
+  three, scoring the empty tiles 0.210 to 0.480 because a bordered tile is itself a
+  square, and turned the helper's fixture-geometry perception test red; clamping a
+  cell that reaches past the crop instead of refusing it turned the helper's bounds
+  test red; dropping the pacing deck deal left `dyn.grid` unnamed, which turned phase
+  one red with the answer still accepted, so the pacing claim is held by the deck and
+  not by the solve.
+- One mutation proved nothing and is recorded as such. Cropping the box measured
+  before the widget was scrolled into view still solved the page, because this
+  widget's own browsing context does not scroll and the two boxes are the same
+  rectangle. The agreement between the crop and the cell rectangles is held by the
+  helper refusing a cell that reaches past the crop, not by this fixture.
 
 What the `visual` row does not cover, measured against two live deployments on
 2026-08-17 so the gap is a number rather than a caveat:
@@ -132,24 +140,32 @@ What the `visual` row does not cover, measured against two live deployments on
   `.rc-imageselect-tile` elements in a `rc-imageselect-table-33` table, the object
   in a `strong` inside `.rc-imageselect-desc-no-canonical`, and
   `#recaptcha-verify-button` to confirm. The selectors are not the obstacle.
-- The obstacle is perception. The tiles are 130 px photographs carrying
-  high-frequency noise, and the object is often a small part of a street scene. On
-  a crop of a live "cars" challenge whose answer was tiles 2, 4 and 7, CLIP
-  ViT-B/32 with generic alternatives chose 2, 4 and 6: one tile that held no car
-  and one car it did not see. Against a sixteen-word vocabulary of the classes
-  reCAPTCHA asks for, the cosine to "car" was within 0.01 of the best wrong class
-  on every tile, and `fire hydrant` outscored `car` on six of nine. Median
-  filtering and prompt ensembles moved the numbers by less than the spread.
-  Whole-tile captioning is the wrong instrument for a small object in scenery; a
-  detector is.
+- Perception was the obstacle and the instrument was wrong. The tiles are 130 px
+  photographs carrying high-frequency noise, and the object is often a small part
+  of a street scene. On a crop of a live "cars" challenge whose answer was tiles 2,
+  4 and 7, CLIP ViT-B/32 with generic alternatives chose 2, 4 and 6: one tile that
+  held no car and one car it did not see. Against a sixteen-word vocabulary of the
+  classes reCAPTCHA asks for, the cosine to "car" was within 0.01 of the best wrong
+  class on every tile, and `fire hydrant` outscored `car` on six of nine. Median
+  filtering and prompt ensembles moved the numbers by less than the spread. On the
+  same crop an OWL-ViT base patch32 export returned six boxes, all of them inside
+  tiles 2, 4 and 7: per-cell best scores 0.220, 0.209 and 0.174 against at most
+  0.041 for the other six. `lurien-vision` reads that export and decides per box,
+  so the classifier is no longer what a live row is waiting on.
+- What a live reCAPTCHA row still needs is the flow, not the model. The grid appears
+  only after `#recaptcha-anchor` is pressed, in a different browsing context than
+  the one holding the tiles, and dynamic variants replace the tiles that were
+  clicked and ask again. `solve()` drives one actor and answers once, so a binding
+  needs an open step and rounds before a live visit is a claim.
 - A live hCaptcha challenge is not a tile grid at all. On the vendor's own demo it
   renders one 500x470 canvas with no per-tile element, and the tasks sampled were
   "Find all animals the given number of times", "Please click on the animal who
   jumps the highest" and "Move ONE animal to the matching silhouette": counting,
   comparison and a drag, not tile classification.
-- So `hcaptcha`, `recaptcha` and `arkose` carry no `[grid]` table. Binding them
-  would produce confident wrong sets on a live page, which is worse than a refusal
-  that names the widget.
+- So `hcaptcha`, `recaptcha` and `arkose` carry no `[grid]` table. A binding that
+  answers the first round of a challenge that has three, or that reads a canvas as
+  if it were tiles, produces a confident wrong set on a live page, which is worse
+  than a refusal that names the widget.
 
 The `prelude` fixture rules out a solve that clicks a page nobody read:
 

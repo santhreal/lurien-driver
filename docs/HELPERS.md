@@ -139,12 +139,12 @@ never touches the page.
 ## The grid model
 
 A slider is measured: arithmetic over the crop, no weights and no model directory.
-A grid is recognised, which needs one. `lurien-vision` reads a CLIP export in ONNX
-form: one directory holding `vision_model.onnx`, `text_model.onnx` and
-`tokenizer.json`.
+A grid is detected, which needs one. `lurien-vision` reads an open-vocabulary
+detector in ONNX form: one directory holding `model.onnx` and `tokenizer.json`. The
+export it is measured against is OWL-ViT base patch32.
 
 ```
-lurien-vision --port 0 --token 6f1c… --model ~/.cache/lurien/vision/clip-vit-base-patch32
+lurien-vision --port 0 --token 6f1c… --model ~/.cache/lurien/vision/owlvit-base-patch32
 ```
 
 `LURIEN_VISION_MODEL` names the same directory. The weights are not in this tree
@@ -159,9 +159,18 @@ the request that needed it:
 {"error":"this helper was started without a grid classifier, so a grid is refused rather than guessed; pass --model DIR or set LURIEN_VISION_MODEL"}
 ```
 
-A cell is judged against the prompt's object together with five generic
-alternatives, and is chosen when the prompt takes more than half the probability. A
-fixed similarity cutoff does not carry from one prompt to the next; a share does.
+The whole crop is looked at once, not tile by tile. The detector proposes boxes
+anywhere in it and scores each against the prompt's object, a box belongs to the
+cell its centre falls in, and a cell's score is the strongest box attributed to it.
+A cell is chosen when that score clears both an absolute floor of 0.08 and 0.4 of
+the strongest box anywhere in the crop. The floor is what makes a grid holding
+nothing an empty answer; the share is what keeps one page's drawing style from
+becoming a different cutoff on the next.
+
+Asking what a tile is a picture of is the wrong question. A tile holding a car at
+the end of a street is mostly street, and on a live 3x3 grid whose answer was tiles
+2, 4 and 7, whole-tile captioning picked 2, 4 and 6. The detector returned six
+boxes on the same crop, all of them inside 2, 4 and 7.
 
 ## Configuring the browser
 

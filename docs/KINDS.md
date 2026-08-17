@@ -29,8 +29,8 @@ that assigns `value` instead is a solve a page can measure and reject.
 A `visual` grid is answered with tile indices. The context that laid the grid out
 measures it, the parent crops exactly the box it reports and asks the vision helper
 which tiles match the widget's question, and the same context re-locates each named
-tile to click it, so no coordinate crosses a process boundary. The helper needs a
-CLIP classifier on disk and refuses the request by name without one, which
+tile to click it, so no coordinate crosses a process boundary. The helper needs an
+object detector on disk and refuses the request by name without one, which
 `docs/HELPERS.md` describes.
 
 ## Add a vendor

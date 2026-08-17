@@ -100,13 +100,13 @@ a pass, and a test enforces that. Claimed today: `none`, `score`, `checkbox`,
 `pow`, `slider`, `visual`. A proof of work is computed in the browser itself, in
 worker lanes, with no helper process and no external service. A slider is measured
 from the rendered image by a loopback helper and dragged with sampled dynamics. A
-tile grid is cropped in the widget's own context, classified by the same helper
-against a local CLIP model, and answered by index, so no coordinate and no picture
+tile grid is cropped in the widget's own context, read by the same helper with a
+local object detector, and answered by index, so no coordinate and no picture
 leaves the machine; that claim is a fixture grid, and a live vendor grid is refused
-by name until the classifier can read one, which the scorecard measures. Every act
-is preceded by a visit: the page is settled, scrolled and crossed by the pointer
-from a plan sampled per session, because a page nobody read scores as a machine
-however trusted the click is.
+by name until a binding can open it and answer its rounds, which the scorecard
+measures. Every act is preceded by a visit: the page is settled, scrolled and
+crossed by the pointer from a plan sampled per session, because a page nobody read
+scores as a machine however trusted the click is.
 
 Honest leaks: matched-host Linux Firefox only. Cross-OS fonts/WebGL/WebGPU,
 inert `canvas:seed`, and proxyless TTL remain.

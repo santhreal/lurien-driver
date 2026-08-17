@@ -49,14 +49,18 @@
   per tile; the parent crops exactly that box, asks `lurien-vision` which tiles match
   the question, and the widget's context re-locates each named tile to click it, so no
   page coordinate crosses a process boundary and a rectangle that moved cannot be
-  clicked. A tile is judged by its softmax share against generic alternatives rather
-  than a fixed cosine cutoff, an empty set is a real answer rather than a failure, and
-  every tile's share is recorded in the evidence row so a near miss is legible. The
-  classifier is a local CLIP ONNX pair the helper loads on first use and never
-  downloads; without one the request is refused by name. Selections are paced from a
-  dealt `grid_deck` entry named in the row, and a binding with no `[grid]` table is
-  recognized and then refused rather than aimed at guessed selectors. The helper
-  protocol is 2.
+  clicked. Tiles are recognized by open-vocabulary detection rather than by captioning
+  each tile: the helper looks at the whole crop once, scores every box it proposes
+  against the prompt's object, gives a box to the cell its centre falls in, and chooses
+  a cell whose strongest box clears both an absolute floor and a share of the strongest
+  box in the crop. A box that fills its cell is the tile rather than its contents and
+  is read only when the crop holds nothing smaller. An empty set is a real answer
+  rather than a failure, and every tile's score is recorded in the evidence row so a
+  near miss is legible. The detector is a local OWL-ViT ONNX export the helper loads on
+  first use and never downloads; without one the request is refused by name. Selections
+  are paced from a dealt `grid_deck` entry named in the row, and a binding with no
+  `[grid]` table is recognized and then refused rather than aimed at guessed selectors.
+  The helper protocol is 2.
 - A page the engine drove and could not clear is `ChallengeRefused`, carrying the
   engine's own reason, and `hard captcha` is now only for a widget the engine
   reported nothing about. The old message sent every failure to the scorecard to

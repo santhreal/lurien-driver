@@ -38,7 +38,7 @@ installed `lurien-browser` and says so when it is missing.
 | the environment the page reads | geolocation, wall clock, permissions and locale are set over the engine control channel, not by page script, proven by `lurien/tests/e2e_geo.sh` and `lurien/tests/e2e_clock.sh` |
 | the network view | routes are applied on the channel in the parent, and one redaction rule serves the log, the HAR and the route view, proven by `lurien/tests/e2e_route.sh` and `lurien/tests/e2e_har.sh` |
 | a handle that means one context | a frame handle is minted once per browsing context and refused when the context is gone, proven by `lurien/tests/e2e_frames.sh` |
-| a grid answered by looking | a tile challenge is cropped in the widget's own context, classified against a local CLIP model, and clicked by index with a dealt pace, proven by `lurien/tests/e2e_visual.sh` |
+| a grid answered by looking | a tile challenge is cropped in the widget's own context, read with a local object detector, and clicked by index with a dealt pace, proven by `lurien/tests/e2e_visual.sh` |
 
 `lurien-driver` is not published while `audio` is still refused.
 
@@ -351,14 +351,16 @@ Claimed means there is a fixture, a runnable script, and a dated row in
 `docs/bench-results/challenge-scorecard.md`. Today that is `none`, `score`,
 `checkbox`, `visual`, `slider`, `pow`.
 
-`visual` is claimed against a fixture grid and needs a CLIP classifier on disk,
+`visual` is claimed against a fixture grid and needs an object detector on disk,
 which the vision helper loads on the first request and refuses by name without.
 The shipped `hcaptcha`, `recaptcha` and `arkose` bindings carry no `[grid]` table,
 so those widgets are recognized and their solve refused until one does. The
-scorecard records why with numbers: reCAPTCHA's tile selectors are known and its
-noised street photographs defeat whole-tile captioning, and hCaptcha renders one
-canvas with counting and comparison tasks rather than a tile grid. A live row for
-`visual` needs detector-class perception in the helper, not another selector.
+scorecard records why with numbers: perception is no longer the obstacle, since the
+detector answers a live reCAPTCHA crop exactly, but reCAPTCHA opens its grid in a
+different browsing context than the anchor that was pressed and asks again after an
+answer, and hCaptcha renders one canvas with counting and comparison tasks rather
+than a tile grid. A live row for `visual` needs an open step and rounds in the
+binding, not another selector.
 
 Not claimed, and refused by name at runtime:
 
