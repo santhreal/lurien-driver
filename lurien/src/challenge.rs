@@ -48,6 +48,23 @@ pub const EVIDENCE_VERSION: u64 = 1;
 /// How long the engine may spend on one page before reporting what it has.
 const BUDGET_MS: u64 = 20_000;
 
+/// Budget per kind, in milliseconds, measured from after the page was read.
+///
+/// A kind is bounded by the work it has to do. Waiting on a scoring vendor is the
+/// whole solve and takes as long as the vendor takes; a checkbox is one click and
+/// then the same write; a proof of work pays for cores against a difficulty the
+/// page chose. One flat number lets the slowest kind set the timeout for the
+/// fastest, and on a page carrying two widgets the first widget spends what the
+/// second one needed.
+///
+/// A kind with no row here gets [`BUDGET_MS`].
+const KIND_BUDGET_MS: &[(&str, u64)] = &[
+    ("score", 20_000),
+    ("checkbox", 10_000),
+    ("slider", 15_000),
+    ("pow", 45_000),
+];
+
 /// Points in one approach path. Enough curvature to carry the corpus shape,
 /// short enough that the whole path is one event burst.
 const PATH_POINTS: usize = 24;
@@ -135,6 +152,7 @@ impl ChallengeConfig {
             "catalog": catalog::catalog_json(),
             "evidence": self.evidence.display().to_string(),
             "budget_ms": self.budget_ms,
+            "kind_budget_ms": kind_budget_json(),
             "claimed_kinds": CLAIMED_KINDS,
             "dynamics_seed": seed,
             "trajectory_deck": deck(seed, TRAJECTORY_SALT, approach_path),
@@ -155,6 +173,15 @@ impl ChallengeConfig {
     pub fn env_entry(&self) -> (String, String) {
         (CONFIG_ENV.to_string(), self.to_env_value())
     }
+}
+
+/// [`KIND_BUDGET_MS`] as the engine reads it: kind to milliseconds.
+fn kind_budget_json() -> serde_json::Value {
+    KIND_BUDGET_MS
+        .iter()
+        .map(|(kind, ms)| ((*kind).to_string(), serde_json::json!(ms)))
+        .collect::<serde_json::Map<_, _>>()
+        .into()
 }
 
 /// A caller-supplied configuration, if this process has one.
@@ -593,6 +620,38 @@ mod tests {
             let known = ["none", "score", "checkbox", "visual", "slider", "audio", "pow", "fail"];
             assert!(known.contains(kind), "{kind} is not a closed kind");
         }
+    }
+
+    /// A kind that acts is bounded by its own work, and a kind this build claims
+    /// without a budget of its own silently inherits the page's. The table is
+    /// checked against the claimed set rather than against a copy of itself, so a
+    /// newly claimed kind is red here until somebody decides what it is worth.
+    #[test]
+    fn every_kind_that_acts_carries_its_own_budget() {
+        let table = kind_budget_json();
+        let budgets = table.as_object().expect("budget table is an object");
+        for kind in CLAIMED_KINDS {
+            // `none` is a clean page and `fail` is a refusal: neither spends time.
+            if matches!(*kind, "none" | "fail") {
+                continue;
+            }
+            let ms = budgets
+                .get(*kind)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_else(|| panic!("claimed kind {kind} has no budget of its own"));
+            assert!(ms > 0, "{kind} was given a budget of nothing");
+        }
+        for (kind, _) in KIND_BUDGET_MS {
+            assert!(
+                CLAIMED_KINDS.contains(kind),
+                "{kind} has a budget and is not claimed, so nothing reads it"
+            );
+        }
+        // The engine reads the table out of the config it was launched with.
+        let shipped: serde_json::Value =
+            serde_json::from_str(&ChallengeConfig::for_process().to_env_value())
+                .expect("config is json");
+        assert_eq!(shipped["kind_budget_ms"], table);
     }
 
     /// A caller-supplied config names a catalog, not a mouse. Without this the

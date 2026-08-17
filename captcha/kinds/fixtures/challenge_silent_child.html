@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>checkbox widget that never answers</title>
+<!--
+  A widget that takes the click and writes no token.
+
+  Every real deployment has this state: the vendor accepted the interaction and is
+  still deciding, or the deployment is broken, or the score was bad enough that no
+  token is coming. The engine cannot tell those apart, and none of them is a solve,
+  so the only question is how long the wait lasts and what the refusal says.
+
+  Used by `lurien/tests/e2e_budget.sh` to prove a kind is bounded by its own
+  budget rather than by the page's: the click is trusted and the checkbox does
+  change, so the refusal is the token wait expiring and nothing else.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 12px; }
+  #box {
+    width: 22px; height: 22px; border: 2px solid #666; border-radius: 3px;
+    display: inline-block; vertical-align: middle; cursor: pointer;
+  }
+  #box[aria-checked="true"] { background: #2b7; border-color: #2b7; }
+</style>
+
+<div id="box" role="checkbox" aria-checked="false" tabindex="0"></div>
+<span id="label">Verify you are human</span>
+<input type="hidden" name="fixture-token" value="">
+<div id="state">untouched</div>
+
+<script>
+  const box = document.getElementById("box");
+  const state = document.getElementById("state");
+  let downTrusted = false;
+  let moves = 0;
+
+  addEventListener("mousemove", event => {
+    if (event.isTrusted) {
+      moves += 1;
+    }
+  });
+
+  box.addEventListener("mousedown", event => {
+    downTrusted = event.isTrusted;
+  });
+
+  box.addEventListener("click", event => {
+    if (!event.isTrusted || !downTrusted || moves < 3) {
+      state.textContent = "refused: " + moves + " moves, trusted " + event.isTrusted;
+      return;
+    }
+    // Checked, and deliberately silent: the hidden input stays empty.
+    box.setAttribute("aria-checked", "true");
+    state.textContent = "accepted, thinking";
+  });
+</script>

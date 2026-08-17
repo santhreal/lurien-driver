@@ -130,3 +130,18 @@ it does not read:
 - A driver that ignores `v` read a stale row as a `checkbox` pass and turned the
   unit test red. Bumping the engine constant alone turned the cross-repository
   version law red.
+
+The `budget` fixture rules out one flat timeout for every kind. Its widget takes a
+trusted click and never writes a token, which is what a vendor that is unhappy or
+broken looks like:
+
+- The same page is visited twice, differing only in whether the config names a
+  budget for `checkbox`. Measured on 2026-08-17 against engine 150.0.2-beta.25: the
+  run with a 1500ms kind budget refused after 4368ms, the run on the flat 8000ms
+  page budget refused after 11004ms, and each refusal named the number it was given.
+- Both runs read the page for about the same time (2856ms and 2838ms). Reading is a
+  property of the page, so a short kind budget must not buy a shorter visit.
+- Three mutations were checked. A solver that ignores `kind_budget_ms` refused both
+  runs on the page budget and the test red; paying for the visit out of the kind
+  budget cut the read to 558ms and the test red; a driver that ships no table turned
+  the unit test that holds the table against the claimed kinds red.

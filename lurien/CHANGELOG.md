@@ -48,6 +48,11 @@
   had the driver reading a foreign row field-by-field and reporting a plausible failed
   challenge; a mismatch is now `EvidenceVersion`, which names both versions and says to
   reinstall the engine. One test holds the two constants equal across the repositories.
+- Each kind is bounded by its own budget (`kind_budget_ms`), counted from after the
+  page was read: waiting on a scoring vendor takes as long as the vendor takes, a
+  checkbox waits on one write, a proof of work pays for cores. One flat page budget
+  let the slowest kind set the timeout for the fastest, and let the first widget on a
+  page spend what the second one needed. Every refusal names the budget it was given.
 - The `pow` kind is solved in the browser with no helper process. The binding's
   `[work]` table says where the challenge and difficulty live and where the answer
   goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by
