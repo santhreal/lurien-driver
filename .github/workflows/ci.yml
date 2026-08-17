@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      # Every crate in the tree. Tests that need the engine binary skip loud.
+      - run: cargo test --workspace --all-targets
+      - run: cargo test -p lurien-browser --doc
+
+  import-law:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      # lurien may reach guise and foxdriver. Anything else in the graph is a
+      # layering break, and guise without `browser` must not pull the driver.
+      - name: lurien dependency graph
+        run: |
+          cargo tree -p lurien-browser --prefix none --no-dedupe > tree.txt
+          for name in captchaforge scanclient wafrift ahura chromiumoxide; do
+            if grep -q "^${name} " tree.txt; then echo "lurien pulls ${name}"; exit 1; fi
+          done
+      - name: guise default features do not pull the driver
+        run: |
+          cargo tree -p guise --no-default-features --prefix none > guise.txt
+          if grep -q '^runtime-foxdriver ' guise.txt; then echo "guise pulls the driver by default"; exit 1; fi
+
+  no-vendor-in-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The engine is a separate repository, so this only guards the catalog
+      # itself: every binding names a kind the schema closes.
+      - name: kinds are the closed set
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          kinds = pathlib.Path("captcha/kinds")
+          schema = (kinds / "_schema.toml").read_text()
+          closed = set(re.findall(r'"([a-z]+)"', schema.split("kinds", 1)[1].split("]", 1)[0]))
+          bad = []
+          for toml in sorted(kinds.glob("*.toml")):
+              if toml.name == "_schema.toml":
+                  continue
+              kind = re.search(r'^kind\s*=\s*"([^"]+)"', toml.read_text(), re.M)
+              if kind is None or kind.group(1) not in closed:
+                  bad.append(toml.name)
+          if bad:
+              sys.exit(f"vendor bindings name a kind outside the closed set: {bad}")
+          print(f"{len(closed)} closed kinds, every binding inside it")
+          PY

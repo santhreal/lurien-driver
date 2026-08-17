@@ -52,11 +52,16 @@ inert `canvas:seed`, and proxyless TTL remain.
 v1 does not download Gecko. Wire a local build:
 
 ```
-software/browser/install.sh [/path/to/camoufox]
+./install.sh [/path/to/engine/build]
 ```
 
 or set `LURIEN_BIN`. Missing engine is an error. There is no Firefox fallback.
 Rust: `cargo add lurien-browser`. Bins: `lurien`, `lurien-mcp`.
+
+This tree is one Cargo workspace, so a clone builds with `cargo build` and tests
+with `cargo test --workspace`. Tests that need the engine binary skip loud. The
+engine itself is a separate repository (a Gecko fork, MPL) and is not vendored
+here.
 
 Plan: [`docs/PLAN.md`](docs/PLAN.md).
 How to add a vendor or a kind: [`docs/KINDS.md`](docs/KINDS.md).
@@ -98,16 +103,17 @@ using `guise-*` that way.
 ## Layout
 
 ```
-software/browser/
+lurien-browser/
+  Cargo.toml                workspace root
   README.md                 this file
   lurien/                   crate lurien-browser
-  engine/                   Gecko fork
+  lurien/kinds              symlink to captcha/kinds, so the catalog ships
+  engine/                   Gecko fork, separate repository
   guise/                    persona
   guise-profiles/ guise-pacing/ guise-choice/ guise-oracle/
   foxdriver/                BiDi
   echo/                     test reflector
   captcha/kinds/            vendor TOML
-  captcha/{vision,audio,pow}/  helper processes
   docs/                     plan + maintainability
   install.sh
 ```

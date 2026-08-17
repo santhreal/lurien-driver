@@ -351,12 +351,6 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             }
             "signals"
         }
-        "dom_network" => {
-            if let Some(limit) = command.arg("limit") {
-                args.set("limit", parse_i64(limit, "limit")?);
-            }
-            "net"
-        }
         "dom_downloads" | "dialog_list" => "dialogs",
         "dialog" => {
             args.set(

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.1.4] - 2026-08-16
+
+### Changed
+- `ThreeWaySurface::reynard_value` is now `lurien_value`. The engine is named
+  lurien; the old field named a product that no longer exists.
+
 ## [0.1.3] - 2026-08-07
 
 ### Fixed

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.1.7]
 
 ### Changed
 - **Removed the one-release reynard aliases.** `reynard_config`, `reynard_config_env`,

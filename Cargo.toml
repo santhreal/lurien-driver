@@ -1,0 +1,35 @@
+# The browser tree is its own workspace: a clone of lurien-browser builds with
+# `cargo build` here, and the crates keep one place to state a dependency version.
+[workspace]
+resolver = "2"
+members = [
+    "guise",
+    "guise-profiles",
+    "guise-pacing",
+    "guise-choice",
+    "guise-oracle",
+    "foxdriver",
+    "echo",
+    "lurien",
+]
+
+[workspace.dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = "4.6.0"
+criterion = "0.5.1"
+futures = { version = "0.3" }
+guise-oracle = { path = "guise-oracle", version = "0.1.4" }
+http = "1.4.0"
+proptest = "1.9.0"
+rand = "0.8"
+reqwest = { version = "0.12.28", default-features = false }
+rustls = "0.23.27"
+rustls-pki-types = "1.14.0"
+serde = { version = "1.0.228", features = ["derive", "rc"] }
+serde_json = { version = "1.0.149", features = ["raw_value"] }
+sha2 = "0.10.9"
+thiserror = "2.0.18"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
+tokio-rustls = "0.26.4"
+tracing = "0.1.44"

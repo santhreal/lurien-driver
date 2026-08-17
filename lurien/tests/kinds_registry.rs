@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn kinds_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captcha/kinds")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("kinds")
 }
 
 fn closed_kinds() -> Vec<String> {

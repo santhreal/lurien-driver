@@ -12,7 +12,10 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 fn main() {
-    let kinds = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captcha/kinds");
+    // `kinds` is the catalog directory: a symlink to `captcha/kinds` in the
+    // tree, a real directory in the published crate, so the build input travels
+    // with the package and there is still exactly one copy of the data.
+    let kinds = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("kinds");
     println!("cargo:rerun-if-changed={}", kinds.display());
 
     let mut files: Vec<PathBuf> = std::fs::read_dir(&kinds)

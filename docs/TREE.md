@@ -19,10 +19,16 @@ this tree, so it stays a separate crate and never learns that lurien exists.
 | `foxdriver/` | BiDi Page | rustenium | guise, lurien, captchaforge |
 | `echo/` | test reflector | rustls | foxdriver, lurien |
 | `captcha/kinds/` | vendor TOML | — (data) | — |
+| `lurien/kinds` | symlink to `captcha/kinds` | — | — |
 | `captcha/vision/` `audio/` `pow/` | helper processes | HelperSock protocol | foxdriver, page, guise |
 | `docs/` | plan + this file | — | — |
 
 All of these directories live under `software/browser/`.
+
+`lurien/kinds` is a symlink, not a copy: `cargo package` follows it, so the
+catalog travels inside the published crate while the tree keeps exactly one copy
+of the data. `build.rs` and the registry test read `lurien/kinds`, which resolves
+in the tree and in an unpacked tarball alike.
 
 Scanners keep `guise-*` crate names. They do not import `lurien` or `foxdriver`.
 
