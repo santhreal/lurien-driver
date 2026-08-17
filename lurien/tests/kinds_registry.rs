@@ -225,6 +225,79 @@ fn every_claimed_kind_has_a_dated_scorecard_row() {
     }
 }
 
+/// The browser version `engine/upstream.sh` pins, as the scorecard writes it.
+///
+/// Vacuous where the engine is not checked out beside the driver, exactly as the
+/// packaging laws are: a proof is only ever produced next to a checkout that has
+/// it, which is where this has to be red.
+fn pinned_engine() -> Option<String> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine/upstream.sh");
+    let raw = fs::read_to_string(path).ok()?;
+    let mut version = None;
+    let mut release = None;
+    for line in raw.lines() {
+        if let Some(value) = line.strip_prefix("version=") {
+            version = Some(value.trim().to_string());
+        }
+        if let Some(value) = line.strip_prefix("release=") {
+            release = Some(value.trim().to_string());
+        }
+    }
+    Some(format!("{}-{}", version?, release?))
+}
+
+/// A version's `major.minor`, which is the axis a `0.x` crate breaks on.
+fn minor_of(version: &str) -> String {
+    version.split('.').take(2).collect::<Vec<_>>().join(".")
+}
+
+/// A proof belongs to a build, not to a feature.
+///
+/// A dated row says somebody ran something once. It does not say the run happened
+/// against the browser this tree builds or the driver that ships with it, and a
+/// solver's proof is worth exactly the build it was produced on: the engine's
+/// trusted-input path, its actor lifetimes and its token observation all move with
+/// the browser version, and the config contract moves with the driver. So each row
+/// names both, and a claim whose row names an older build is red here until the run
+/// is repeated.
+#[test]
+fn every_claim_names_the_build_that_proved_it() {
+    let scorecard = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../docs/bench-results/challenge-scorecard.md");
+    let raw = fs::read_to_string(&scorecard).expect("challenge-scorecard.md");
+    let engine = pinned_engine();
+    let driver = lurien::version::crate_version();
+    let mut checked = 0;
+    for row in raw.lines().filter(|l| l.starts_with("| `")) {
+        let cells: Vec<&str> = row.split('|').map(str::trim).collect();
+        let kind = cells.get(1).copied().unwrap_or_default().trim_matches('`');
+        if !lurien::challenge::CLAIMED_KINDS.contains(&kind) {
+            continue;
+        }
+        checked += 1;
+        let named_engine = cells.get(4).copied().unwrap_or_default();
+        let named_driver = cells.get(5).copied().unwrap_or_default();
+        if let Some(pinned) = engine.as_deref() {
+            assert_eq!(
+                named_engine, pinned,
+                "the {kind} claim was proved on browser {named_engine} and this tree builds \
+                 {pinned}; re-run its proof and rewrite the row"
+            );
+        }
+        assert_eq!(
+            minor_of(named_driver),
+            minor_of(driver),
+            "the {kind} claim was proved by driver {named_driver} and this tree ships {driver}; \
+             re-run its proof and rewrite the row"
+        );
+    }
+    assert_eq!(
+        checked,
+        lurien::challenge::CLAIMED_KINDS.len(),
+        "a claimed kind has no scorecard row to carry a build"
+    );
+}
+
 /// Every closed kind is either claimed with a row, or listed as not claimed. A
 /// kind that is neither would fall through both doors in silence.
 #[test]

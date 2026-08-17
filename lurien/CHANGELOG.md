@@ -53,6 +53,10 @@
   checkbox waits on one write, a proof of work pays for cores. One flat page budget
   let the slowest kind set the timeout for the fastest, and let the first widget on a
   page spend what the second one needed. Every refusal names the budget it was given.
+- A scorecard row names the build that produced it, browser and driver. A dated row
+  only said somebody ran something once; a claim proved against an older browser, or
+  an older driver minor version, is now red until the run is repeated. The engine
+  version comes from `engine/upstream.sh`, so nobody maintains a second copy of it.
 - The `pow` kind is solved in the browser with no helper process. The binding's
   `[work]` table says where the challenge and difficulty live and where the answer
   goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by

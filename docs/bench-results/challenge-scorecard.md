@@ -14,14 +14,19 @@ Two row classes, kept apart because they prove different things:
 
 ## Claimed kinds
 
-| Kind | Class | Date | Engine | Result | Evidence |
-|---|---|---|---|---|---|
-| `none` | live vendor | 2026-08-16 | 150.0.2-beta.25 | document usable, no widget seen | `lurien --headless goto https://example.com/` reports `{"kind":"none"}` |
-| `score` | live vendor | 2026-08-16 | 150.0.2-beta.25 | vendor wrote its token, no interaction | managed deployment at `demo.turnstile.workers.dev` reports `{"kind":"score"}`; the observer folded to `none` because the token was already written |
-| `checkbox` | fixture | 2026-08-17 | 150.0.2-beta.25 | solved in 98 ms across 2 contexts, `via: field` | `lurien/tests/e2e_challenge.sh`; the widget refuses an untrusted click and a click with fewer than three trusted pointer moves |
-| `pow` | fixture | 2026-08-17 | 150.0.2-beta.25 | 4 hex zeros cleared in 172920 hashes across 7 lanes, submitted and accepted in 275 ms, `via: field` | `lurien/tests/e2e_pow.sh`; the page mints a fresh challenge and a random difficulty per load and accepts only a digest it verified itself, typed key by key with trusted events. `lurien/tests/pow_sha256.mjs` pins the worker digest against a reference implementation |
-| `slider` | fixture | 2026-08-17 | 150.0.2-beta.25 | notch measured from pixels, 117 to 175 px travel over three runs, dragged in 20 moves, accepted in 704 ms, `via: field` | `lurien/tests/e2e_slider.sh`; the notch moves every load, the widget refuses a travel with fewer than eight moves, one step size, no correction, or under 80 ms, and the same run with an evenly spaced profile is refused. `captcha/vision/tests/real_crop.rs` pins the measurement against a crop the browser rendered |
-| `fail` | n/a | 2026-08-16 | 150.0.2-beta.25 | typed error, no fabricated token | `tests/verb_fail_closed.rs` |
+A row names the build that produced it: the browser it ran against and the driver
+that drove it. A claim whose row names an older browser, or an older driver minor
+version, is refused by `lurien/tests/kinds_registry.rs` until the run is repeated
+and the row rewritten. A proof belongs to a build, not to a feature.
+
+| Kind | Class | Date | Engine | Driver | Result | Evidence |
+|---|---|---|---|---|---|---|
+| `none` | live vendor | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | document usable, no widget seen | `lurien --headless goto https://example.com/` reports `{"kind":"none"}` |
+| `score` | live vendor | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | vendor wrote its token, no interaction | managed deployment at `demo.turnstile.workers.dev` reports `{"kind":"score"}`; the observer folded to `none` because the token was already written |
+| `checkbox` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | solved in 7088 ms across 2 contexts, `via: field`; most of that is the visit the vendor is owed before the click | `lurien/tests/e2e_challenge.sh`; the widget refuses an untrusted click and a click with fewer than three trusted pointer moves |
+| `pow` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 4 hex zeros cleared in 143 hashes across 7 lanes, typed and accepted, whole page 9689 ms, `via: field` | `lurien/tests/e2e_pow.sh`; the page mints a fresh challenge and a random difficulty per load and accepts only a digest it verified itself, typed key by key with trusted events. `lurien/tests/pow_sha256.mjs` pins the worker digest against a reference implementation |
+| `slider` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | notch measured from pixels, 259 px travel dragged in 20 moves, accepted, whole page 4791 ms, `via: field` | `lurien/tests/e2e_slider.sh`; the notch moves every load, the widget refuses a travel with fewer than eight moves, one step size, no correction, or under 80 ms, and the same run with an evenly spaced profile is refused. `captcha/vision/tests/real_crop.rs` pins the measurement against a crop the browser rendered |
+| `fail` | n/a | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | typed error, no fabricated token | `tests/verb_fail_closed.rs` |
 
 ## Not claimed
 
