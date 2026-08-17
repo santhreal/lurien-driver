@@ -154,6 +154,15 @@
   launch, one JSON line in and one out, every request carrying a per-session
   token. It exists for state no client outside a browser can reach, starting with
   a device position, and it stays closed for a session that does not ask.
+- The wall clock. `clock-set` takes milliseconds or a time like
+  `2033-05-18T03:33:20Z`, `clock-tick` moves it by an interval, `clock-restore`
+  gives the host clock back, and `clock` reports what pages read. The shift is
+  compiled into the page's own compartment before its first script, so a page
+  that reads the date while parsing reads the session's date, and a frame reads
+  the same one as its parent whatever process it landed in. `Date.prototype`,
+  `Date.name` and the source of `Date.now` are the native ones. Monotonic time,
+  pending timers and workers stay on the host clock, deliberately: a shifted
+  clock is a reader's view, not a fake event loop.
 - A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
   `drag_profile` and `prelude` when it names none. Without this the engine fell
   back to a built-in constant, so every session moved identically.

@@ -125,6 +125,52 @@ impl Control {
         self.call("ping", "{}").await.map(|_| ())
     }
 
+    /// Serve `epoch_ms` as the current time to every page of this session.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable, or when a
+    /// page that is already loaded could not take the clock.
+    pub async fn set_clock(&self, epoch_ms: i64) -> Result<i64, Error> {
+        let reply = self
+            .call("clock.set", &format!("{{\"epoch_ms\":{epoch_ms}}}"))
+            .await?;
+        shift_of(&reply, "clock.set")
+    }
+
+    /// Move this session's clock by `ms`, forwards or back.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable, or when a
+    /// page that is already loaded could not take the clock.
+    pub async fn tick_clock(&self, ms: i64) -> Result<i64, Error> {
+        let reply = self.call("clock.tick", &format!("{{\"ms\":{ms}}}")).await?;
+        shift_of(&reply, "clock.tick")
+    }
+
+    /// Put the host clock back.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable, or when a
+    /// page that is already loaded could not give the clock up.
+    pub async fn clear_clock(&self) -> Result<(), Error> {
+        let reply = self.call("clock.clear", "{}").await?;
+        refused(&reply, "clock.clear")?;
+        Ok(())
+    }
+
+    /// How far this session's clock runs from the host's, in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable.
+    pub async fn clock_shift(&self) -> Result<Option<i64>, Error> {
+        let reply = self.call("clock.get", "{}").await?;
+        Ok(field(&reply, "shift_ms").and_then(|value| value.as_i64()))
+    }
+
     /// One request, one reply, connection closed.
     async fn call(&self, op: &str, params: &str) -> Result<String, Error> {
         let unreachable = |detail: String| Error::ControlUnavailable { detail };
@@ -183,6 +229,38 @@ fn parse_reply(reply: &str, op: &str, port: u16) -> Result<String, Error> {
         .and_then(serde_json::Value::as_str)
         .unwrap_or("the engine gave no reason");
     Err(unreachable(format!("the engine refused {op}: {detail}")))
+}
+
+/// One field of a reply this client has already accepted.
+fn field(reply: &str, key: &str) -> Option<serde_json::Value> {
+    serde_json::from_str::<serde_json::Value>(reply)
+        .ok()
+        .and_then(|value| value.get(key).cloned())
+}
+
+/// Refuse a reply that succeeded in part.
+///
+/// The engine answers yes once the session's own state is set, because a page
+/// that has not loaded yet will take it. A page that is loaded and could not
+/// take it is named in `error`, and reporting that as done is how a caller ends
+/// up asserting against a clock nothing is serving.
+fn refused(reply: &str, op: &str) -> Result<(), Error> {
+    match field(reply, "error").as_ref().and_then(serde_json::Value::as_str) {
+        Some(detail) => Err(Error::ControlUnavailable {
+            detail: format!("the engine took {op} but a loaded page did not: {detail}. Check that the page is still there"),
+        }),
+        None => Ok(()),
+    }
+}
+
+/// The clock shift a reply reports, once the reply is known to be whole.
+fn shift_of(reply: &str, op: &str) -> Result<i64, Error> {
+    refused(reply, op)?;
+    field(reply, "shift_ms")
+        .and_then(|value| value.as_i64())
+        .ok_or_else(|| Error::ControlUnavailable {
+            detail: format!("the reply to {op} names no clock shift: {reply:?}. Check that nothing else took the port"),
+        })
 }
 
 /// A token no other process on this host can guess.

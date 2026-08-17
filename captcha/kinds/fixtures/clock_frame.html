@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>clock frame</title>
+<script>
+// A frame reads its own Date. A frame left on the host clock while its parent
+// reads another year is a contradiction no real browser produces, so this is
+// read at parse time too.
+window.lurienParse = { now: Date.now(), year: new Date().getFullYear() };
+window.lurienRead = function () {
+  return JSON.stringify({ now: Date.now(), parse: window.lurienParse });
+};
+</script>
+</head>
+<body>frame</body>
+</html>

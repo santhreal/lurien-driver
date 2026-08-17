@@ -22,6 +22,10 @@ fn call<'a>(session: &'a Session, args: &'a crate::verb::Args) -> VerbFuture<'a>
 
 async fn run(session: &Session, _args: &crate::verb::Args) -> Result<Output, Error> {
     let geo = session.geo()?;
+    // The engine has to be running: what the report names is the channel that
+    // serves the position and the policy the profile was launched with, and
+    // neither exists until there is a browser.
+    session.browser().await?;
     Ok(Output::Json(report(session, geo)?))
 }
 

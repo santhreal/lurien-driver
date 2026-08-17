@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>clock</title>
+<script>
+// Read the clock at parse time, before anything a driver could inject later.
+// A page that reads the date in its first script is the case a clock has to
+// survive: anything applied after load has already lost this race.
+window.lurienParse = {
+  now: Date.now(),
+  ctor: new Date().getTime(),
+  year: new Date().getFullYear(),
+};
+window.lurienRead = function () {
+  return JSON.stringify({
+    now: Date.now(),
+    ctor: new Date().getTime(),
+    parse: window.lurienParse,
+    // Identity a detector checks before it trusts a date: the prototype it came
+    // from, the constructor's own name, and what the source of a static reads
+    // like through the one hole that cannot be shadowed per function.
+    proto: Object.getPrototypeOf(new Date()) === Date.prototype,
+    tag: Object.prototype.toString.call(new Date()),
+    name: Date.name,
+    source: Function.prototype.toString.call(Date.now),
+    ctorSource: Function.prototype.toString.call(Date),
+    // A date built from parts is arithmetic, never the clock.
+    fixed: new Date(Date.UTC(2020, 0, 2, 3, 4, 5)).getTime(),
+    // Monotonic time counts from navigation and is deliberately left alone.
+    monotonic: performance.now() < 600000,
+  });
+};
+</script>
+</head>
+<body>
+<p id="out">clock</p>
+<iframe id="child" src="clock_frame.html"></iframe>
+</body>
+</html>

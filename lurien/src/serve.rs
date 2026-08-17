@@ -882,6 +882,20 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             "geolocation-set"
         }
         "geolocation_clear" | "geo_clear" | "clear_geolocation" => "geolocation-clear",
+        "clock" | "dom_clock" => "clock",
+        "clock_set" | "set_clock" | "set_system_time" => {
+            if let Some(value) = command.any_arg(&["time", "epoch_ms", "now"]) {
+                args.set("time", value);
+            }
+            "clock-set"
+        }
+        "clock_tick" | "tick_clock" | "fast_forward" => {
+            if let Some(value) = command.any_arg(&["ms", "milliseconds", "by"]) {
+                args.set("ms", parse_i64(value, "ms")?);
+            }
+            "clock-tick"
+        }
+        "clock_restore" | "clock_clear" | "restore_clock" => "clock-restore",
         "permissions" | "dom_permissions" => {
             for key in ["allow", "prompt"] {
                 if let Some(value) = command.arg(key) {

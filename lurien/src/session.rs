@@ -98,6 +98,15 @@ impl Session {
             })
     }
 
+    /// The privileged channel into this session's engine.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when no channel could be reserved.
+    pub fn control(&self) -> Result<&crate::control::Control, Error> {
+        Ok(self.geo()?.control())
+    }
+
     /// Launch options this session will use.
     #[must_use]
     pub fn options(&self) -> &LaunchOptions {
