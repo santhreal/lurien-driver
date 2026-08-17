@@ -91,6 +91,8 @@ const LEGACY_COMMANDS: &[&str] = &[
     "route_abort",
     "route_continue",
     "route_clear",
+    // Traffic export.
+    "har",
     // DOM tool actions (eval-based).
     "dom_eval",
     "dom_check",

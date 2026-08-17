@@ -5,6 +5,7 @@
 //! sensitive query parameters are redacted before any face sees a row.
 
 mod clear;
+mod har;
 mod log;
 mod tokens;
 
@@ -15,7 +16,7 @@ use std::sync::Arc;
 
 /// Verbs of this domain. A new verb is one line here plus its own file.
 /// Registry entries for the network domain.
-pub static SPECS: &[&VerbSpec] = &[&clear::SPEC, &log::SPEC, &tokens::SPEC];
+pub static SPECS: &[&VerbSpec] = &[&clear::SPEC, &har::SPEC, &log::SPEC, &tokens::SPEC];
 
 /// Row a face may see: identity, outcome, and redacted headers.
 pub(crate) fn entry_row(entry: &Arc<NetworkEntry>, headers: bool) -> Value {
@@ -52,7 +53,10 @@ fn safe_headers(headers: &[CapturedHeader]) -> Vec<Value> {
 }
 
 /// Credential-bearing headers are replaced, not truncated. `Authorization`
-/// keeps its scheme so a caller can still tell Bearer from Basic.
+/// keeps its scheme so a caller can still tell Bearer from Basic. A header whose
+/// value is a URL goes through the same query rules as a request URL, because
+/// `Location`, `Referer` and `Refresh` carry one-time tokens as often as a
+/// request line does.
 pub(crate) fn safe_header_value(name: &str, value: &str) -> String {
     let lower = name.to_ascii_lowercase();
     const SECRET_HEADERS: &[&str] = &[
@@ -72,6 +76,9 @@ pub(crate) fn safe_header_value(name: &str, value: &str) -> String {
             }
         }
         return "***redacted***".to_string();
+    }
+    if value.contains('?') && (value.starts_with("http://") || value.starts_with("https://")) {
+        return safe_url(value);
     }
     value.to_string()
 }
@@ -156,6 +163,19 @@ mod tests {
     #[test]
     fn ordinary_headers_survive() {
         assert_eq!(safe_header_value("accept", "text/html"), "text/html");
+    }
+
+    /// A URL in a header is a URL. `Location` after an OAuth hop is the usual
+    /// way a one-time code escapes a redacted row.
+    #[test]
+    fn a_url_in_a_header_gets_the_query_rules() {
+        for name in ["Location", "Referer", "Content-Location"] {
+            let out = safe_header_value(name, "https://x.test/cb?code=abc&next=/home");
+            assert_eq!(out, "https://x.test/cb?code=<redacted>&next=/home", "{name}");
+        }
+        // Not a URL, not touched: a header that happens to contain a question
+        // mark is still its own value.
+        assert_eq!(safe_header_value("accept", "text/html;q=0.9?x"), "text/html;q=0.9?x");
     }
 
     #[test]

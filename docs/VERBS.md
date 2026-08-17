@@ -75,6 +75,7 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 
 | Verb | Arguments | Output | Stability | Summary |
 |---|---|---|---|---|
+| `har` | `path?`, `limit?` | json | stable | Export captured traffic as a HAR 1.2 log, with credentials redacted. Writes a file when given a path. |
 | `net` | `limit?`, `headers?` | json | stable | Recent network requests with status and redacted headers. |
 | `net-clear` | - | text | stable | Empty the network log so the next read shows only new traffic. |
 | `net-tokens` | `limit?` | json | stable | Where credentials appear in captured traffic: header, query, or cookie. |

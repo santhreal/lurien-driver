@@ -5,7 +5,7 @@
 - One verb registry behind three transports. `Session::call(verb, args)` is the only
   entry point; the CLI, `lurien-mcp`, and `lurien serve` generate their surfaces from
   the same `VerbSpec`, so none can offer a verb or argument the others lack.
-- 63 verbs across thirteen domains: `page`, `dom`, `frame`, `input`, `state`, `storage`,
+- 64 verbs across thirteen domains: `page`, `dom`, `frame`, `input`, `state`, `storage`,
   `net`, `intercept`, `dialog`, `observe`, `context`, `session`, `profile`. One verb per
   file; a new verb is that file plus one line in its domain's `SPECS`.
 - `lurien serve` replaces the separate `guise-bridge` daemon and speaks the same wire
@@ -178,6 +178,17 @@
   `dom_clear_intercepts`) now land on routes.
 - `eval` awaits a promise. An expression like `fetch(url)` returns its resolved
   value instead of an opaque handle, so an async probe is one call.
+- `har` exports captured traffic as a HAR 1.2 log, to a file or inline. Redaction
+  is the same code `net` uses, so an export cannot show what a row hides:
+  credential headers, sensitive query values, and every cookie value are gone,
+  while the names, the timings, the sizes and the statuses stay. A request body is
+  carried only when it is form or json, with credential fields redacted by key at
+  any depth; a body this driver cannot read is reported by size and type and not
+  exported. Response bodies are not captured, and the export says so instead of
+  reporting an empty one.
+- A header whose value is a URL now goes through the same query redaction as a
+  request URL. `Location` after an OAuth hop carried a one-time code past the
+  redaction in `net`.
 - A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
   `drag_profile` and `prelude` when it names none. Without this the engine fell
   back to a built-in constant, so every session moved identically.

@@ -569,6 +569,15 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             "net"
         }
         "dom_clear_network_log" | "dom_clear_network" => "net-clear",
+        "har" | "net_har" | "dom_har" => {
+            if let Some(path) = command.any_arg(&["path", "file"]) {
+                args.set("path", path);
+            }
+            if let Some(limit) = command.arg("limit") {
+                args.set("limit", parse_i64(limit, "limit")?);
+            }
+            "har"
+        }
         // Context management: list, create, switch, close.
         "dom_list_contexts" => "contexts",
         "dom_new_context" => {
