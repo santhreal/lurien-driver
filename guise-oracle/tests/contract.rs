@@ -6,17 +6,30 @@ use guise_oracle::{
 };
 use std::fs;
 
+/// The manifest version is not a constant to be pinned; what must hold is that
+/// the version being shipped has a changelog entry, so a bump cannot ship
+/// undocumented. Pinning a literal here only reddened on every release.
 #[test]
 fn cargo_toml_conforms_to_santh_standard() {
     let content = fs::read_to_string("Cargo.toml").expect("read Cargo.toml");
 
     assert!(content.contains(r#"name = "guise-oracle""#));
-    assert!(content.contains(r#"version = "0.1.3""#));
     assert!(content.contains(r#"rust-version = "1.85""#));
     assert!(content.contains(r#"[package.metadata.santh]"#));
     assert!(content.contains(r#"status = "beta""#));
     assert!(
         content.contains(r#"authors = ["Santh <64453045+santhreal@users.noreply.github.com>"]"#)
+    );
+
+    let version = content
+        .lines()
+        .find_map(|line| line.strip_prefix("version = \""))
+        .and_then(|rest| rest.split('"').next())
+        .expect("Cargo.toml states a version");
+    let changelog = fs::read_to_string("CHANGELOG.md").expect("read CHANGELOG.md");
+    assert!(
+        changelog.contains(&format!("## [{version}]")),
+        "version {version} ships with no CHANGELOG entry"
     );
 }
 

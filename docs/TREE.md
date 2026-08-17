@@ -77,8 +77,13 @@ the directory.
 | `Solver.sys.mjs` | the pipeline; every claimed kind ends in a token write or a typed refusal |
 | `Bootstrap.sys.mjs` | reads the config out of the environment, registers the actor, idempotent start |
 
-CI:
+CI (`.github/workflows/ci.yml`):
 
-- `cargo tree -p lurien-browser` does not pull scanclient / wafrift / ahura / captchaforge.
-- grep of `engine/additions/challenge/` for vendor names is empty.
-- guise default features do not pull foxdriver.
+- `cargo test --workspace --all-targets`, plus the `lurien-browser` doc tests.
+- `cargo tree -p lurien-browser` pulls no scanner crate and no browser sidecar.
+- guise without default features does not pull the driver.
+- every vendor binding names a kind `_schema.toml` closes.
+
+The vendor-name grep over `engine/additions/challenge/` runs in the engine
+repository, which owns that directory. `cargo test -p lurien-browser --test
+kinds_registry` also runs it whenever the engine tree is present.

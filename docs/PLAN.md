@@ -10,6 +10,17 @@ guise crate *names* stay (`guise`, `guise-profiles`, `guise-pacing`, `guise-choi
 This file is the plan.
 Do not create `santhreal/reynard`, do not ship `REYNARD_*`, do not leave `software/reynard/` as a path.
 
+## 0. Shipped, 2026-08-16
+
+| Item | State |
+|---|---|
+| `santhreal/lurien-browser` | created, `main` pushed, workspace root so a clone builds |
+| crates.io `lurien-browser` | `0.1.0`, installs from the registry, both bins run |
+| crates.io `guise` / `guise-oracle` | `0.1.7` / `0.1.4`, the versions `lurien-browser` needs |
+| crates.io `captchaforge` | 36 versions yanked; `0.2.41` stays as the retirement notice |
+| engine challenge subsystem | `engine/additions/challenge/`, packaged, proven by `lurien/tests/e2e_challenge.sh` |
+| claimed kinds | `none`, `score`, `checkbox`, each with a dated scorecard row |
+
 ## 1. Name
 
 | Face | Token |

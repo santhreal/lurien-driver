@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-08-16
 
 - One verb registry behind three transports. `Session::call(verb, args)` is the only
   entry point; the CLI, `lurien-mcp`, and `lurien serve` generate their surfaces from
@@ -43,7 +43,7 @@
   is refused with a typed error rather than reported as a pass, and two tests enforce the
   scorecard against the claimed set. Claimed: `none`, `score`, `checkbox`.
 
-## 0.1.0
+### Launch contract
 
 - First public face: `lurien::Browser::launch`, `lurien` CLI, `lurien-mcp`.
 - Engine required (`LURIEN_BIN` or `~/.local/share/lurien/lurien`). No Firefox fallback.
