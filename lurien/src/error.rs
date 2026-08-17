@@ -119,6 +119,17 @@ pub enum Error {
         /// Classification or token-wait detail.
         detail: String,
     },
+    /// The engine wrote an evidence row whose schema this build does not read.
+    #[error(
+        "the engine writes evidence schema {found} and this build reads {known}. \
+         Reinstall the engine with install.sh so the driver and the browser match."
+    )]
+    EvidenceVersion {
+        /// Version the row carried, or `0` when the row named none.
+        found: u64,
+        /// Version this build reads.
+        known: u64,
+    },
     /// Engine process died.
     #[error("lurien engine crashed. Read the wrapper log at {log_path}, then retry with a fresh profile_dir.")]
     EngineCrash {
@@ -303,6 +314,7 @@ mod tests {
             Error::CookiesCorrupt { path: "/tmp/cookies.sqlite".into(), detail: "not SQLite".into() },
             Error::HardCaptcha { kind: "visual".into() },
             Error::ScoreFailed { detail: "no token after 8000ms".into() },
+            Error::EvidenceVersion { found: 99, known: 1 },
             Error::EngineCrash { log_path: "/tmp/lurien.log".into() },
             Error::DownloadDirUnusable {
                 path: "/mnt/ro/dl".into(),
@@ -359,6 +371,7 @@ mod tests {
                 | Error::CookiesCorrupt { .. }
                 | Error::HardCaptcha { .. }
                 | Error::ScoreFailed { .. }
+                | Error::EvidenceVersion { .. }
                 | Error::EngineCrash { .. }
                 | Error::DownloadDirUnusable { .. }
                 | Error::DownloadFailed { .. }

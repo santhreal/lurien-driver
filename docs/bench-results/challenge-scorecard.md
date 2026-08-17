@@ -116,3 +116,17 @@ The `dynamics` fixture rules out one curve replayed for every interaction:
   take entry 0 and the test red; an unseeded (`Math.random`) order broke the replay
   and the test red; shipping one `trajectory` instead of a deck left every row with
   no entry to name and the test red.
+
+Every row above is only worth reading if the reader and the writer agree on what a
+row means. Each row carries `v`, its schema version, and the driver refuses a row
+it does not read:
+
+- Measured on 2026-08-17 against engine 150.0.2-beta.25: the `checkbox` phase
+  passed with `"v":1` on both the `taken` row and the verdict row.
+- An engine that appends no `v` was built and run against the same driver:
+  navigation failed with `the engine writes evidence schema 0 and this build reads
+  1. Reinstall the engine with install.sh so the driver and the browser match.`
+  rather than reporting the page as an unsolved challenge.
+- A driver that ignores `v` read a stale row as a `checkbox` pass and turned the
+  unit test red. Bumping the engine constant alone turned the cross-repository
+  version law red.

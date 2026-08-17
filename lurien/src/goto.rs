@@ -149,9 +149,21 @@ async fn classify_with_score_wait(
     let start = tokio::time::Instant::now();
     let mut page_kind: Option<ChallengeKind> = None;
     loop {
-        if let Some(report) = crate::challenge::outcome_for(evidence, url, mark) {
-            let kind = ChallengeKind::parse(&report.kind);
-            return Ok((kind, Some(report)));
+        match crate::challenge::verdict(evidence, url, mark) {
+            crate::challenge::Verdict::Reported(report) => {
+                let kind = ChallengeKind::parse(&report.kind);
+                return Ok((kind, Some(report)));
+            }
+            // The engine is running, but it is not the engine this driver reads.
+            // Waiting out the budget would end in a page-probe answer that hides
+            // a half-finished install, so it is named here instead.
+            crate::challenge::Verdict::Unreadable { found } => {
+                return Err(Error::EvidenceVersion {
+                    found,
+                    known: crate::challenge::EVIDENCE_VERSION,
+                });
+            }
+            crate::challenge::Verdict::Pending => {}
         }
         let elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
         if page_kind.is_none() {

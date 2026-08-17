@@ -25,6 +25,7 @@ Do not create `santhreal/reynard`, do not ship `REYNARD_*`, do not leave `softwa
 | `slider` | measured by `lurien-vision` from the widget's own snapshot, dragged along a sampled profile, proven by `lurien/tests/e2e_slider.sh` |
 | the visit | `Prelude.sys.mjs` reads the page in the top document before any act, from a plan `guise` sampled, proven by `lurien/tests/e2e_prelude.sh` |
 | dynamics per interaction | the driver ships a deck of sampled paths and a seed, `Dynamics.sys.mjs` deals one per interaction and records it, proven by `lurien/tests/e2e_dynamics.sh` |
+| evidence a version apart | every row carries `v`, the driver refuses a row it does not read and names both versions, held equal across the two repositories by `lurien/tests/engine_package.rs` |
 | selectors and the wait | `role:`/`text:`/`label:`/`placeholder:`/`testid:` or CSS, one resolver, acts wait for their element, ambiguity is refused with candidates, proven by `lurien/tests/e2e_locator.sh` |
 | the agent's page | `snapshot` answers with roles, names and handles; `ref:eN` acts, and a handle whose node changed is refused, proven by `lurien/tests/e2e_snapshot.sh` |
 | one call, several verbs | `batch` runs a step list, validates it before running any of it, stops at the first failure and says how far it got, on all three faces, proven by `lurien/tests/e2e_batch.sh` |

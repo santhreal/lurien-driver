@@ -113,3 +113,34 @@ fn every_module_import_resolves_to_a_packaged_module() {
         }
     }
 }
+
+/// The evidence schema version is one number held in two repositories.
+///
+/// The engine stamps rows, the driver refuses a stamp it does not know, and a
+/// bump on one side alone turns every navigation into `Error::EvidenceVersion`
+/// against a browser that is in fact current. Neither side can see the other at
+/// run time, so the agreement is checked here.
+#[test]
+fn the_engine_stamps_the_version_the_driver_reads() {
+    let dir = additions();
+    if !dir.is_dir() {
+        return;
+    }
+    let source = fs::read_to_string(dir.join("Observer.sys.mjs")).expect("Observer.sys.mjs");
+    let needle = "export const EVIDENCE_VERSION = ";
+    let index = source
+        .find(needle)
+        .expect("Observer.sys.mjs declares EVIDENCE_VERSION");
+    let stamped: u64 = source[index + needle.len()..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .expect("EVIDENCE_VERSION is a number");
+    assert_eq!(
+        stamped,
+        lurien::challenge::EVIDENCE_VERSION,
+        "the engine stamps evidence schema {stamped} and the driver reads {}",
+        lurien::challenge::EVIDENCE_VERSION
+    );
+}

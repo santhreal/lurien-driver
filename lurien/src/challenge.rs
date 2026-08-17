@@ -32,6 +32,19 @@ pub const CONFIG_ENV: &str = "LURIEN_CHALLENGE";
 /// `tests/kinds_registry.rs` enforces.
 pub const CLAIMED_KINDS: &[&str] = &["none", "score", "checkbox", "pow", "slider", "fail"];
 
+/// Schema version of every row the engine appends to the evidence file, and the
+/// only version this build reads.
+///
+/// The evidence file is the driver's only account of what the browser did, and the
+/// two halves ship separately: a driver from one build reads rows from an engine
+/// of another whenever an install is half done. Fields move, so a foreign row read
+/// field-by-field yields a plausible verdict rather than a refusal. The engine
+/// stamps every row, the driver refuses a stamp it does not know, and the mismatch
+/// surfaces as [`crate::Error::EvidenceVersion`] instead of a wrong pass.
+///
+/// Bump this when a row's meaning changes, not when a field is added.
+pub const EVIDENCE_VERSION: u64 = 1;
+
 /// How long the engine may spend on one page before reporting what it has.
 const BUDGET_MS: u64 = 20_000;
 
@@ -413,19 +426,66 @@ pub fn mark(evidence: &Path) -> u64 {
     std::fs::metadata(evidence).map(|m| m.len()).unwrap_or(0)
 }
 
-/// The engine's last word on `url` since `from`, if it wrote one.
+/// What the evidence file says about one visit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// No row for this page since the mark: the engine has not reported yet.
+    Pending,
+    /// The engine reported.
+    Reported(EngineOutcome),
+    /// A row this build cannot read, so its contents mean nothing here.
+    Unreadable {
+        /// Schema version the row named, or `0` when it named none.
+        found: u64,
+    },
+}
+
+/// The engine's last word on `url` since `from`.
 ///
 /// Reads the newest matching row appended after the mark. A missing file, an
 /// unreadable file, or a file with no row for this page since the mark all mean
 /// the same thing: the engine did not report, so the caller must not claim it did.
+///
+/// A row whose `v` is not [`EVIDENCE_VERSION`] is refused rather than read
+/// field-by-field. Fields move between builds, and reading a foreign row with
+/// `unwrap_or` turns a build mismatch into a confident `solved:false`, which is
+/// the one answer a caller acts on without asking why.
 #[must_use]
-pub fn outcome_for(evidence: &Path, url: &str, from: u64) -> Option<EngineOutcome> {
-    let text = std::fs::read_to_string(evidence).ok()?;
-    since(&text, from)
-        .lines()
-        .rev()
-        .filter_map(|line| parse_row(line))
-        .find(|row| url.is_empty() || same_page(&row.url, url))
+pub fn verdict(evidence: &Path, url: &str, from: u64) -> Verdict {
+    let Ok(text) = std::fs::read_to_string(evidence) else {
+        return Verdict::Pending;
+    };
+    for line in since(&text, from).lines().rev() {
+        let Ok(row) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        let seen = row.get("url").and_then(|v| v.as_str()).unwrap_or_default();
+        if !(url.is_empty() || same_page(seen, url)) {
+            continue;
+        }
+        let found = version_of(&row);
+        if found != EVIDENCE_VERSION {
+            return Verdict::Unreadable { found };
+        }
+        // A diagnostic row carries `event` and no verdict. Reading one as an
+        // outcome reports a page as unsolved while the engine is still working on
+        // it, and ends the session mid-solve.
+        if row.get("event").is_some() {
+            continue;
+        }
+        if let Some(outcome) = parse_row(&row) {
+            return Verdict::Reported(outcome);
+        }
+    }
+    Verdict::Pending
+}
+
+/// Schema version a row names. A row from a build older than the version itself
+/// names none, which is not version 1: it is a row whose shape is unknown.
+fn version_of(row: &serde_json::Value) -> u64 {
+    row.get("v")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or_default()
 }
 
 /// Is the engine solving this page right now?
@@ -445,6 +505,9 @@ pub fn taken(evidence: &Path, url: &str, from: u64) -> bool {
         let Ok(row) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
             return false;
         };
+        if version_of(&row) != EVIDENCE_VERSION {
+            return false;
+        }
         if row.get("event").and_then(|v| v.as_str()) != Some("taken") {
             return false;
         }
@@ -470,14 +533,8 @@ fn same_page(seen: &str, asked: &str) -> bool {
     seen == asked || seen.trim_end_matches('/') == asked.trim_end_matches('/')
 }
 
-fn parse_row(line: &str) -> Option<EngineOutcome> {
-    let row: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-    // A diagnostic row carries `event` and no verdict. Reading one as an outcome
-    // reports a page as unsolved while the engine is still working on it, and
-    // ends the session mid-solve.
-    if row.get("event").is_some() {
-        return None;
-    }
+/// A verdict row, once its schema version is one this build reads.
+fn parse_row(row: &serde_json::Value) -> Option<EngineOutcome> {
     let solved = row.get("solved")?.as_bool()?;
     let kind = row.get("kind")?.as_str()?.to_string();
     Some(EngineOutcome {
@@ -772,10 +829,31 @@ mod tests {
         assert!(kept.get("prelude_deck").is_none(), "the empty prelude was outranked by a deck");
     }
 
+    /// A row as the engine writes it. Every row it appends carries `v`, so a test
+    /// row without one is a row from another build, not a shorthand.
+    fn stamped(row: &str) -> String {
+        let mut value: serde_json::Value = serde_json::from_str(row).expect("test row is json");
+        value["v"] = EVIDENCE_VERSION.into();
+        value.to_string()
+    }
+
+    /// The verdict a readable row carries, for tests about content rather than
+    /// about versions. An unreadable row is a different failure and never silently
+    /// reads as "no verdict yet".
+    fn reported(evidence: &Path, url: &str, from: u64) -> Option<EngineOutcome> {
+        match verdict(evidence, url, from) {
+            Verdict::Reported(outcome) => Some(outcome),
+            Verdict::Pending => None,
+            Verdict::Unreadable { found } => {
+                panic!("a stamped test row read as schema {found}")
+            }
+        }
+    }
+
     #[test]
     fn an_absent_evidence_file_is_not_a_pass() {
         let missing = std::env::temp_dir().join("lurien-challenge-does-not-exist.jsonl");
-        assert_eq!(outcome_for(&missing, "https://example.com/", 0), None);
+        assert_eq!(verdict(&missing, "https://example.com/", 0), Verdict::Pending);
         assert_eq!(mark(&missing), 0);
     }
 
@@ -786,25 +864,22 @@ mod tests {
         let path = dir.join("evidence.jsonl");
         std::fs::write(
             &path,
-            concat!(
-                r#"{"kind":"score","solved":false,"ms":1,"url":"https://a.test/","contexts":1}"#,
-                "\n",
-                r#"{"kind":"checkbox","vendor":"v","solved":true,"via":"field","ms":900,"url":"https://a.test","contexts":3}"#,
-                "\n",
-                r#"{"kind":"none","solved":true,"ms":0,"url":"https://other.test/","contexts":1}"#,
-                "\n",
+            format!(
+                "{}\n{}\n{}\n",
+                stamped(r#"{"kind":"score","solved":false,"ms":1,"url":"https://a.test/","contexts":1}"#),
+                stamped(r#"{"kind":"checkbox","vendor":"v","solved":true,"via":"field","ms":900,"url":"https://a.test","contexts":3}"#),
+                stamped(r#"{"kind":"none","solved":true,"ms":0,"url":"https://other.test/","contexts":1}"#),
             ),
         )
         .expect("write evidence");
-        let found = outcome_for(&path, "https://a.test/", 0).expect("row for the page");
+        let found = reported(&path, "https://a.test/", 0).expect("row for the page");
         assert_eq!(found.kind, "checkbox");
         assert!(found.solved);
         assert_eq!(found.via.as_deref(), Some("field"));
         assert_eq!(found.contexts, 3);
-        let other =
-            outcome_for(&path, "https://other.test/", 0).expect("row for the other page");
+        let other = reported(&path, "https://other.test/", 0).expect("row for the other page");
         assert_eq!(other.kind, "none");
-        assert_eq!(outcome_for(&path, "https://absent.test/", 0), None);
+        assert_eq!(reported(&path, "https://absent.test/", 0), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -815,15 +890,14 @@ mod tests {
         let path = dir.join("evidence.jsonl");
         std::fs::write(
             &path,
-            concat!(
-                r#"{"kind":"score","solved":true,"url":"https://a.test/"}"#,
-                "\n",
-                r#"{"kind":"checkbox","solved":true,"url":"https://a.te"#,
-                "\n",
+            format!(
+                "{}\n{}\n",
+                stamped(r#"{"kind":"score","solved":true,"url":"https://a.test/"}"#),
+                r#"{"v":1,"kind":"checkbox","solved":true,"url":"https://a.te"#,
             ),
         )
         .expect("write evidence");
-        let found = outcome_for(&path, "https://a.test/", 0).expect("the intact row");
+        let found = reported(&path, "https://a.test/", 0).expect("the intact row");
         assert_eq!(found.kind, "score");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -839,14 +913,14 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("evidence.jsonl");
         let diagnostics = [
-            r#"{"at":"t","event":"configured","bindings":10}"#,
-            r#"{"at":"t","event":"sighting","url":"https://a.test/","top":10,"isTop":true,"kind":"slider","vendor":"fixture","signals":[],"folded":"slider","contexts":2}"#,
-            r#"{"at":"t","event":"sighting","url":"https://a.test/","top":10,"isTop":false,"kind":"checkbox","vendor":"fixture","signals":[],"folded":"checkbox","contexts":2}"#,
+            stamped(r#"{"at":"t","event":"configured","bindings":10}"#),
+            stamped(r#"{"at":"t","event":"sighting","url":"https://a.test/","top":10,"isTop":true,"kind":"slider","vendor":"fixture","signals":[],"folded":"slider","contexts":2}"#),
+            stamped(r#"{"at":"t","event":"sighting","url":"https://a.test/","top":10,"isTop":false,"kind":"checkbox","vendor":"fixture","signals":[],"folded":"checkbox","contexts":2}"#),
         ];
-        for row in diagnostics {
+        for row in &diagnostics {
             std::fs::write(&path, format!("{row}\n")).expect("write evidence");
             assert_eq!(
-                outcome_for(&path, "https://a.test/", 0),
+                reported(&path, "https://a.test/", 0),
                 None,
                 "a diagnostic row was read as a verdict: {row}"
             );
@@ -857,17 +931,65 @@ mod tests {
             format!(
                 "{}\n{}\n",
                 diagnostics[1],
-                r#"{"kind":"slider","vendor":"fixture","solved":true,"via":"field","ms":700,"url":"https://a.test/","contexts":2,"source":"engine"}"#
+                stamped(r#"{"kind":"slider","vendor":"fixture","solved":true,"via":"field","ms":700,"url":"https://a.test/","contexts":2,"source":"engine"}"#)
             ),
         )
         .expect("write evidence");
-        let found = outcome_for(&path, "https://a.test/", 0).expect("the verdict row");
+        let found = reported(&path, "https://a.test/", 0).expect("the verdict row");
         assert!(found.solved);
         assert_eq!(found.kind, "slider");
         // A row with a kind but no verdict field is not a verdict either.
-        std::fs::write(&path, "{\"kind\":\"slider\",\"url\":\"https://a.test/\"}\n")
+        std::fs::write(
+            &path,
+            format!("{}\n", stamped(r#"{"kind":"slider","url":"https://a.test/"}"#)),
+        )
+        .expect("write evidence");
+        assert_eq!(reported(&path, "https://a.test/", 0), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The driver and the engine ship as two builds, so a driver reads rows an
+    /// older or newer browser wrote whenever an install is half done. Fields move
+    /// between versions: a foreign row read field-by-field yields `solved:false`
+    /// with a plausible kind, which a caller acts on as a failed challenge instead
+    /// of a broken install. Every shape of foreign row is refused here, and the
+    /// refusal is a distinct answer from "nothing yet".
+    #[test]
+    fn a_row_from_another_build_is_refused_rather_than_read() {
+        let dir = std::env::temp_dir().join(format!("lurien-evidence-ver-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("evidence.jsonl");
+        let body = r#""kind":"checkbox","vendor":"v","solved":true,"via":"field","ms":900,"url":"https://a.test/","contexts":2"#;
+        let foreign = [
+            // A build older than the stamp itself names no version.
+            (format!("{{{body}}}"), 0),
+            (format!("{{\"v\":99,{body}}}"), 99),
+            // A version is a number, not a string or a name.
+            (format!("{{\"v\":\"1\",{body}}}"), 0),
+        ];
+        for (row, found) in &foreign {
+            std::fs::write(&path, format!("{row}\n")).expect("write evidence");
+            assert_eq!(
+                verdict(&path, "https://a.test/", 0),
+                Verdict::Unreadable { found: *found },
+                "a row from another build was read: {row}"
+            );
+            assert!(
+                !taken(&path, "https://a.test/", 0),
+                "a row from another build counted as a running solve: {row}"
+            );
+        }
+
+        // A row this build wrote is read, and the refusal above was about the
+        // stamp rather than the contents.
+        std::fs::write(&path, format!("{}\n", stamped(&format!("{{{body}}}")))).expect("write");
+        let found = reported(&path, "https://a.test/", 0).expect("the current row");
+        assert!(found.solved);
+
+        // A foreign row for another page is not this page's problem.
+        std::fs::write(&path, format!("{{{body}}}\n").replace("a.test", "b.test"))
             .expect("write evidence");
-        assert_eq!(outcome_for(&path, "https://a.test/", 0), None);
+        assert_eq!(verdict(&path, "https://a.test/", 0), Verdict::Pending);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -882,38 +1004,35 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lurien-evidence-mark-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("evidence.jsonl");
-        let solved = r#"{"kind":"checkbox","vendor":"v","solved":true,"via":"field","ms":900,"url":"https://a.test/","contexts":2}"#;
-        std::fs::write(&path, format!("{{\"event\":\"taken\",\"url\":\"https://a.test/\"}}\n{solved}\n"))
-            .expect("write evidence");
+        let solved = stamped(r#"{"kind":"checkbox","vendor":"v","solved":true,"via":"field","ms":900,"url":"https://a.test/","contexts":2}"#);
+        let took = stamped(r#"{"event":"taken","url":"https://a.test/"}"#);
+        std::fs::write(&path, format!("{took}\n{solved}\n")).expect("write evidence");
 
         // The first visit's own reader, marked before its own row existed, sees it.
-        assert!(outcome_for(&path, "https://a.test/", 0).is_some());
+        assert!(reported(&path, "https://a.test/", 0).is_some());
         assert!(taken(&path, "https://a.test/", 0));
 
         // A second navigation marks the file first, so the same rows are history.
         let mark = mark(&path);
-        assert_eq!(outcome_for(&path, "https://a.test/", mark), None);
+        assert_eq!(reported(&path, "https://a.test/", mark), None);
         assert!(
             !taken(&path, "https://a.test/", mark),
             "an old taken row made the second visit look like a running solve"
         );
 
         // What the engine appends after the mark is this visit's, verdict or not.
-        let refused = r#"{"kind":"checkbox","vendor":"v","solved":false,"via":null,"ms":40,"url":"https://a.test/","contexts":2,"error":"refused"}"#;
-        std::fs::write(
-            &path,
-            format!("{{\"event\":\"taken\",\"url\":\"https://a.test/\"}}\n{solved}\n{{\"event\":\"taken\",\"url\":\"https://a.test/\"}}\n{refused}\n"),
-        )
-        .expect("append evidence");
+        let refused = stamped(r#"{"kind":"checkbox","vendor":"v","solved":false,"via":null,"ms":40,"url":"https://a.test/","contexts":2,"error":"refused"}"#);
+        std::fs::write(&path, format!("{took}\n{solved}\n{took}\n{refused}\n"))
+            .expect("append evidence");
         assert!(taken(&path, "https://a.test/", mark));
-        let now = outcome_for(&path, "https://a.test/", mark).expect("this visit's row");
+        let now = reported(&path, "https://a.test/", mark).expect("this visit's row");
         assert!(!now.solved, "the second visit inherited the first one's pass");
         assert_eq!(now.error.as_deref(), Some("refused"));
 
         // An evidence file replaced under the caller is read whole rather than
         // skipped: a mark past the end means none of it is history.
         std::fs::write(&path, format!("{solved}\n")).expect("shorter evidence");
-        assert!(outcome_for(&path, "https://a.test/", mark).is_some());
+        assert!(reported(&path, "https://a.test/", mark).is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

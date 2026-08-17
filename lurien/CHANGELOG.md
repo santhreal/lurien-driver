@@ -43,6 +43,11 @@
 - A kind is claimed only when the scorecard carries a dated row for it. An unclaimed kind
   is refused with a typed error rather than reported as a pass, and two tests enforce the
   scorecard against the claimed set. Claimed: `none`, `score`, `checkbox`, `pow`, `slider`.
+- Every evidence row carries a schema version, and the driver refuses a row it does
+  not read. The browser and the driver ship as two builds, so a half-finished install
+  had the driver reading a foreign row field-by-field and reporting a plausible failed
+  challenge; a mismatch is now `EvidenceVersion`, which names both versions and says to
+  reinstall the engine. One test holds the two constants equal across the repositories.
 - The `pow` kind is solved in the browser with no helper process. The binding's
   `[work]` table says where the challenge and difficulty live and where the answer
   goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by
