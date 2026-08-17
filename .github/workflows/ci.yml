@@ -12,7 +12,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.88
       - uses: Swatinem/rust-cache@v2
       # Every crate in the tree. Tests that need the engine binary skip loud.
@@ -22,7 +22,7 @@ jobs:
   import-law:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.88
       - uses: Swatinem/rust-cache@v2
       # lurien may reach guise and foxdriver. Anything else in the graph is a
@@ -41,7 +41,7 @@ jobs:
   no-vendor-in-engine:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # The engine is a separate repository, so this only guards the catalog
       # itself: every binding names a kind the schema closes.
       - name: kinds are the closed set
@@ -66,7 +66,7 @@ jobs:
   pow-worker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # The grinding worker carries its own SHA-256. A wrong digest still
       # terminates and still reports a nonce, so it is checked against node's.
       - name: worker digest matches a reference implementation
@@ -75,7 +75,7 @@ jobs:
   resolver:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # `locator.js` and `snapshot.js` are evaluated in the page by every verb
       # that touches an element, so a syntax error there breaks every act at
       # runtime and no Rust test sees it: the string only fails when a browser
@@ -89,7 +89,7 @@ jobs:
   e2e-scripts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # The live suite skips without an engine, so a syntax error in one of these
       # scripts would read as a skip on every machine that lacks the browser.
       - name: the live scripts parse
@@ -101,7 +101,7 @@ jobs:
   slider-measurement:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # The measurement is arithmetic over a crop, so it is checkable without a
       # browser. The suite includes a crop the browser rendered, which is what
       # catches a finder that only works on images a test drew.
