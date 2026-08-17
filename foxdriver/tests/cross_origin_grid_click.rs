@@ -162,23 +162,24 @@ async fn run() {
         .await
         .expect("goto parent");
 
-    // Wait for the cross-origin grid frame to attach.
-    for _ in 0..50 {
-        if page.frames().await.unwrap().len() >= 2 {
+    // Wait for the tiles themselves, not for the frame count. An attached frame
+    // can still hold an empty document, and on a loaded runner it does: this
+    // asserted on the count a frame reported the instant it existed, which read as
+    // a broken tile search rather than as a document that had not parsed yet.
+    let mut tiles = Vec::new();
+    for _ in 0..100 {
+        tiles = find_tiles_in_frames(&page, ".rc-imageselect-tile")
+            .await
+            .unwrap_or_default();
+        if tiles.len() >= GRID * GRID {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-
-    // --- CONTRACT 1: find_tiles_in_frames sees all 9 cross-origin tiles, in
-    // order, with correct main-viewport centres. ---
-    let mut tiles = find_tiles_in_frames(&page, ".rc-imageselect-tile")
-        .await
-        .expect("tile search");
     assert_eq!(
         tiles.len(),
         GRID * GRID,
-        "must find all {} cross-origin grid tiles, got {}",
+        "must find all {} cross-origin grid tiles within 10s, got {}",
         GRID * GRID,
         tiles.len()
     );

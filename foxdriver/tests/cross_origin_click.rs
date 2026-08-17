@@ -145,6 +145,43 @@ async fn ctx_with_path(page: &Page, needle: &str) -> Option<FrameId> {
     None
 }
 
+/// Poll until the document whose path contains `needle` holds `selector`.
+///
+/// An attached frame is not a parsed document. Waiting on the context count and
+/// then asserting on the child's DOM passes on an idle machine and fails on a
+/// loaded one, which reads as a broken search rather than as a race in the test.
+async fn document_ready(page: &Page, needle: &str, selector: &str) -> bool {
+    let script = format!("!!document.querySelector({selector:?})");
+    for _ in 0..100 {
+        if let Some(ctx) = ctx_with_path(page, needle).await {
+            let held = page
+                .evaluate_in_context(&script, &ctx)
+                .await
+                .ok()
+                .and_then(|r| r.into_value::<bool>().ok())
+                .unwrap_or(false);
+            if held {
+                return true;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+/// The viewport centre of `selector` wherever it lives, once it exists.
+async fn centre_when_ready(page: &Page, selector: &str) -> Option<(f64, f64)> {
+    for _ in 0..100 {
+        if let Ok(Some(centre)) =
+            runtime_foxdriver::frame::find_element_centre_in_frames(page, selector).await
+        {
+            return Some(centre);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    None
+}
+
 async fn run() {
     let l_parent = TcpListener::bind("127.0.0.1:0").unwrap();
     let l_box = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -186,12 +223,10 @@ async fn run() {
         .await
         .expect("goto");
 
-    for _ in 0..50 {
-        if page.frames().await.unwrap().len() >= 2 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    assert!(
+        document_ready(&page, "box", "#cb").await,
+        "the cross-origin checkbox document never parsed"
+    );
 
     let box_ctx = nonmain_ctx(&page)
         .await
@@ -235,12 +270,10 @@ async fn run() {
     let _ = page
         .evaluate("window.postMessage({t:'show_nested'},'*')")
         .await;
-    for _ in 0..60 {
-        if page.frames().await.unwrap().len() >= 3 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    assert!(
+        document_ready(&page, "inner", "#cb").await,
+        "the innermost cross-origin document never parsed"
+    );
 
     // POSITIVE 3: top-context click routes two frames deep → trusted.
     reset(&page).await;
@@ -441,20 +474,12 @@ async fn run_find_centre() {
         .await
         .expect("goto");
 
-    // Wait for the cross-origin iframe to attach (the exact race a real solver
-    // hits: the widget iframe is injected a few hundred ms after navigation).
-    for _ in 0..50 {
-        if page.frames().await.unwrap().len() >= 2 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
     // DISCOVER: sum the opaque cross-origin iframe's offset with the in-frame
-    // checkbox rect to get a viewport coordinate.
-    let centre = runtime_foxdriver::frame::find_element_centre_in_frames(&page, "#cf-checkbox")
+    // checkbox rect to get a viewport coordinate. The search itself is the wait:
+    // the widget iframe is injected a few hundred ms after navigation, and its
+    // document parses later still.
+    let centre = centre_when_ready(&page, "#cf-checkbox")
         .await
-        .expect("find_element_centre_in_frames must not error")
         .expect("checkbox inside the cross-origin iframe must be located");
 
     // CONTRACT 1: the discovered coordinate equals iframe-offset + in-frame
@@ -586,19 +611,11 @@ async fn run_deep_find_centre() {
         .await
         .expect("goto");
 
-    // Wait for BOTH nested iframes to attach (3 contexts: parent + mid + inner).
-    for _ in 0..60 {
-        if page.frames().await.unwrap().len() >= 3 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
     // DISCOVER: the checkbox lives two cross-origin frames deep. The summed
-    // viewport centre must equal mid + inner + in-inner offsets.
-    let centre = runtime_foxdriver::frame::find_element_centre_in_frames(&page, "#deep-cb")
+    // viewport centre must equal mid + inner + in-inner offsets. Both frames have
+    // to attach and parse first, so the search is the wait.
+    let centre = centre_when_ready(&page, "#deep-cb")
         .await
-        .expect("find_element_centre_in_frames must not error")
         .expect("checkbox two cross-origin frames deep must be located");
 
     assert!(
