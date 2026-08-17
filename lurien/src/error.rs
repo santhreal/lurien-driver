@@ -148,6 +148,23 @@ pub enum Error {
         /// What happened instead.
         detail: String,
     },
+    /// This session serves no position, so there is nothing to read or move.
+    #[error(
+        "this session serves no position: {detail}. \
+         Use a persona whose timezone names a known region, or pass \
+         --geolocation lat,lon at launch."
+    )]
+    GeolocationUnavailable {
+        /// Why no position service exists.
+        detail: String,
+    },
+    /// The engine's control channel did not answer, so privileged state such as
+    /// a device position could not be changed.
+    #[error("the engine control channel is unavailable: {detail}")]
+    ControlUnavailable {
+        /// Which call failed, on which port, and why.
+        detail: String,
+    },
     /// A face sent a verb that is not in the registry.
     #[error("unknown verb {name:?}. Run `lurien verbs` for the registry.")]
     UnknownVerb {
@@ -295,6 +312,14 @@ mod tests {
                 file: "invoice.pdf".into(),
                 detail: "nothing finished within 15000ms".into(),
             },
+            Error::GeolocationUnavailable {
+                detail: "persona timezone Antarctica/Troll has no region".into(),
+            },
+            Error::ControlUnavailable {
+                detail: "the engine control channel on port 41231 did not answer position.set: \
+                         connection refused. Check that the session is still running"
+                    .into(),
+            },
             Error::UnknownVerb { name: "teleport".into() },
             Error::BadArgs {
                 verb: "click".into(),
@@ -337,6 +362,8 @@ mod tests {
                 | Error::EngineCrash { .. }
                 | Error::DownloadDirUnusable { .. }
                 | Error::DownloadFailed { .. }
+                | Error::GeolocationUnavailable { .. }
+                | Error::ControlUnavailable { .. }
                 | Error::UnknownVerb { .. }
                 | Error::BadArgs { .. }
                 | Error::Unresolved { .. }

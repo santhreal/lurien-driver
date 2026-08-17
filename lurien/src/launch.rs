@@ -1,9 +1,12 @@
 //! Launch contract: resolve → gates → spawn → Page.
 
 use crate::error::Error;
+use crate::geo::{Geolocation, Position};
+use crate::permission::PermissionPolicy;
 use crate::resolve::resolve_engine_checked;
 use guise::StealthProfile;
 use runtime_foxdriver::{FoxBrowserConfig, Page, ProxyConfig};
+use std::sync::Arc;
 
 /// Launch options. Default is headful, FirefoxLinux, no proxy.
 #[derive(Debug, Clone)]
@@ -19,6 +22,17 @@ pub struct LaunchOptions {
     /// Directory downloads land in. Resolved per session, so two sessions never
     /// overwrite each other's file of the same name.
     pub download_dir: Option<String>,
+    /// What a page gets when it asks for a capability. Set here because Gecko
+    /// reads it at startup; nothing changes it in a live session.
+    pub permissions: PermissionPolicy,
+    /// Where the browser thinks it is. `None` means the persona's own region.
+    pub geolocation: Option<Position>,
+    /// The position state and control channel of the session. Created before
+    /// launch by whoever owns the session, because the engine is told about the
+    /// channel in its environment and applies the starting position to the first
+    /// window it opens; [`launch_with_options`] creates one when the caller did
+    /// not.
+    pub geo: Option<Arc<Geolocation>>,
 }
 
 impl Default for LaunchOptions {
@@ -29,12 +43,24 @@ impl Default for LaunchOptions {
             profile_dir: None,
             proxy: None,
             download_dir: None,
+            permissions: PermissionPolicy::default(),
+            geolocation: None,
+            geo: None,
         }
     }
 }
 
+/// A launched browser, and the session-scoped services that must outlive the
+/// call that started them.
+pub struct Launched {
+    /// The BiDi page.
+    pub page: Page,
+    /// The position this session serves and the channel that moves it.
+    pub geo: Arc<Geolocation>,
+}
+
 /// Resolve the engine, enforce gates, spawn lurien, return a BiDi [`Page`].
-pub async fn launch_with_options(opts: LaunchOptions) -> Result<Page, Error> {
+pub async fn launch_with_options(opts: LaunchOptions) -> Result<Launched, Error> {
     let bin = resolve_engine_checked()?;
     if !opts.headless && display_unset() {
         return Err(Error::DisplayUnset);
@@ -67,6 +93,21 @@ pub async fn launch_with_options(opts: LaunchOptions) -> Result<Page, Error> {
     );
     crate::download::ensure_dir(&downloads)?;
 
+    // Where the browser thinks it is. The engine applies the position itself, in
+    // the process that owns the tab, so what a launch carries is the channel and
+    // the starting fix. A caller that already made one (a session, so a verb can
+    // move the position before the first page) keeps it.
+    let geo = match opts.geo.clone() {
+        Some(state) => state,
+        None => Arc::new(Geolocation::new(
+            crate::geo::persona_position(opts.profile),
+            opts.geolocation,
+        )?),
+    };
+    let mut prefs = crate::download::prefs(&downloads);
+    prefs.push_str(&opts.permissions.prefs());
+    prefs.push_str(&crate::geo::prefs());
+
     // The engine solves at the level that can see the widget. It is inert unless
     // this variable is present, so a session that never asked is never observed.
     let challenge = crate::challenge::ChallengeConfig::for_process();
@@ -76,13 +117,14 @@ pub async fn launch_with_options(opts: LaunchOptions) -> Result<Page, Error> {
         proxy: opts.proxy,
         viewport_width: 1280,
         viewport_height: 720,
-        env: vec![challenge.env_entry()],
-        user_js_content: Some(crate::download::prefs(&downloads)),
+        env: vec![challenge.env_entry(), geo.env_entry()],
+        user_js_content: Some(prefs),
         ..Default::default()
     };
-    guise::browser::launch_with_config(&bin, &opts.profile, config)
+    let page = guise::browser::launch_with_config(&bin, &opts.profile, config)
         .await
-        .map_err(map_launch_err)
+        .map_err(map_launch_err)?;
+    Ok(Launched { page, geo })
 }
 
 async fn probe_proxy(proxy: &ProxyConfig) -> Result<(), Error> {
@@ -106,7 +148,7 @@ async fn probe_proxy(proxy: &ProxyConfig) -> Result<(), Error> {
 }
 
 /// Default launch: FirefoxLinux, headful.
-pub async fn launch(profile: StealthProfile) -> Result<Page, Error> {
+pub async fn launch(profile: StealthProfile) -> Result<Launched, Error> {
     launch_with_options(LaunchOptions {
         profile,
         ..LaunchOptions::default()

@@ -31,6 +31,8 @@ pub struct Session {
     opts: LaunchOptions,
     browser: Mutex<Option<Arc<Browser>>>,
     telemetry: Mutex<Option<Telemetry>>,
+    /// Why this session has no position state, when it has none.
+    geo_refusal: Option<String>,
 }
 
 impl Default for Session {
@@ -55,11 +57,45 @@ impl Session {
         if opts.download_dir.is_none() {
             opts.download_dir = Some(crate::download::session_dir());
         }
+        // Same reason, and one more: the engine is handed the control channel in
+        // its environment at startup, so the port and the token have to exist
+        // before the first launch. A persona whose timezone names no region
+        // serves no position, which the geolocation verbs report rather than
+        // inventing coordinates.
+        let mut geo_refusal = None;
+        if opts.geo.is_none() {
+            match crate::geo::Geolocation::new(
+                crate::geo::persona_position(opts.profile),
+                opts.geolocation,
+            ) {
+                Ok(state) => opts.geo = Some(Arc::new(state)),
+                Err(e) => geo_refusal = Some(e.to_string()),
+            }
+        }
         Self {
             opts,
             browser: Mutex::new(None),
             telemetry: Mutex::new(None),
+            geo_refusal,
         }
+    }
+
+    /// The position this session serves, and the channel that moves it.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when no control channel could be reserved,
+    /// which leaves the session with no way to reach the engine's own state.
+    pub fn geo(&self) -> Result<&Arc<crate::geo::Geolocation>, Error> {
+        self.opts
+            .geo
+            .as_ref()
+            .ok_or_else(|| Error::ControlUnavailable {
+                detail: self
+                    .geo_refusal
+                    .clone()
+                    .unwrap_or_else(|| "no control channel was reserved".to_string()),
+            })
     }
 
     /// Launch options this session will use.

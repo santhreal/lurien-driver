@@ -72,9 +72,34 @@ pub struct Command {
     pub proxy_url: Option<String>,
     /// Verb arguments. A string is the historical shape and still works; a JSON
     /// array is accepted too, so a client can send a list without encoding it as
-    /// text. Decoded against the verb spec.
-    #[serde(default)]
+    /// text. A number or a boolean is normalised to its text form at decode, so a
+    /// client that sends `{"latitude": 52.52}` is read, not silently ignored by
+    /// every argument reader that expects the historical string. Decoded against
+    /// the verb spec.
+    #[serde(default, deserialize_with = "de_args")]
     pub args: Option<HashMap<String, Value>>,
+}
+
+/// Decode the argument map, turning every scalar into the string shape the
+/// translation layer reads. One place, so no command has to remember to accept a
+/// JSON number.
+fn de_args<'de, D>(deserializer: D) -> Result<Option<HashMap<String, Value>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Option<HashMap<String, Value>> = Option::deserialize(deserializer)?;
+    Ok(raw.map(|map| {
+        map.into_iter()
+            .map(|(key, value)| {
+                let value = match value {
+                    Value::Number(n) => Value::String(n.to_string()),
+                    Value::Bool(b) => Value::String(b.to_string()),
+                    other => other,
+                };
+                (key, value)
+            })
+            .collect()
+    }))
 }
 
 impl Command {
@@ -836,6 +861,35 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
                 None => "snapshot",
             }
         }
+        // Position and permissions. The position moves at run time; the
+        // permissions are a launch property, and the verb refuses a change here
+        // with the launch argument that works.
+        "geolocation" | "geo" | "dom_geolocation" => "geolocation",
+        "geolocation_set" | "geo_set" | "set_geolocation" => {
+            for key in ["latitude", "longitude", "accuracy_m"] {
+                if let Some(value) = command.arg(key) {
+                    args.set(key, parse_f64(value, key)?);
+                }
+            }
+            // A single `position: "lat,lon[,acc]"` is the same thing spelled the
+            // way the launch argument spells it.
+            if let Some(spec) = command.any_arg(&["position", "coordinates"]) {
+                let position = crate::geo::parse_position(spec).map_err(|e| e.to_string())?;
+                args.set("latitude", position.latitude);
+                args.set("longitude", position.longitude);
+                args.set("accuracy_m", position.accuracy_m);
+            }
+            "geolocation-set"
+        }
+        "geolocation_clear" | "geo_clear" | "clear_geolocation" => "geolocation-clear",
+        "permissions" | "dom_permissions" => {
+            for key in ["allow", "prompt"] {
+                if let Some(value) = command.arg(key) {
+                    args.set(key, crate::permission::PermissionPolicy::split_list(value));
+                }
+            }
+            "permissions"
+        }
         other => {
             return Err(format!(
                 "unsupported command: {other}. run `lurien verbs` for the verb surface"
@@ -901,6 +955,12 @@ fn parse_i64(raw: &str, field: &str) -> Result<i64, String> {
         .map_err(|e| format!("{field} must be an integer: {e}"))
 }
 
+fn parse_f64(raw: &str, field: &str) -> Result<f64, String> {
+    raw.trim()
+        .parse::<f64>()
+        .map_err(|e| format!("{field} must be a number: {e}"))
+}
+
 fn truthy(raw: &str) -> bool {
     matches!(
         raw.trim().to_ascii_lowercase().as_str(),
@@ -944,6 +1004,14 @@ fn headless_of(command: &Command) -> bool {
             .unwrap_or(false),
     };
     !attended
+}
+
+/// A comma-separated launch list, split the same way the CLI splits its flag.
+fn list_arg(command: &Command, key: &str) -> Vec<String> {
+    command
+        .arg(key)
+        .map(crate::permission::PermissionPolicy::split_list)
+        .unwrap_or_default()
 }
 
 /// One named session and its clocks. `last_used` moves on every request that
@@ -1095,6 +1163,15 @@ impl Registry {
             download_dir: command
                 .any_arg(&["download_dir", "downloads_dir"])
                 .map(str::to_string),
+            permissions: crate::permission::PermissionPolicy::from_lists(
+                &list_arg(command, "allow"),
+                &list_arg(command, "prompt"),
+            )
+            .map_err(|e| e.to_string())?,
+            geolocation: match command.any_arg(&["geolocation", "position"]) {
+                Some(spec) => Some(crate::geo::parse_position(spec).map_err(|e| e.to_string())?),
+                None => None,
+            },
             ..LaunchOptions::default()
         }));
         self.sessions

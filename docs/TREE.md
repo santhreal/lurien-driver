@@ -48,6 +48,8 @@ Scanners keep `guise-*` crate names. They do not import `lurien` or `foxdriver`.
 | `src/download.rs` | downloads | Owns the per-session download directory, the prefs that point Firefox at it with no prompt, and the wait: a download is finished when its bytes are on disk, not when the browser says so. |
 | `src/chooser.rs`, `src/chooser.js` | the chooser a page opens | Arms one interception, cancels the default action of the click that would open the native picker, and attaches the caller's files to the input the page meant. The page's own listeners still run; nothing is intercepted unless a caller asked. |
 | `src/shot.rs` | what a picture covers | Turns viewport, whole document, rectangle and element into one area, measured in the document that owns it. Nothing scrolls: an element below the fold is a document-origin clip, so the page is left where the caller left it. Also reads a PNG's own size, which is what every face reports back. |
+| `src/geo.rs`, `src/control.rs` | where the browser thinks it is | The engine applies a position in the process that owns the tab, which is the only place `navigator.geolocation` reads one, so a loaded page moves without a reload. `control.rs` is the client for that channel: a loopback line protocol whose port is chosen before launch and whose token keeps the open port private to the session. `geo.rs` owns what the session serves; the starting position is the persona's own region, so the coordinates cannot contradict the clock. |
+| `src/permission.rs` | what a page is allowed to ask for | Every permission is written into the profile at launch, denied unless the caller granted it, and reported from the same table the flags parse. Gecko reads these at startup, so a live session refuses a change and names the launch argument. |
 | `src/mcp.rs`, `src/serve.rs`, `bins/lurien.rs` | faces | Transports. They read the registry; they never match on a verb name and never import `verb::<domain>::`. `serve.rs` also owns the legacy wire names, and each maps onto a verb rather than reimplementing one. It also owns session lifecycle: every named session carries an age and an idle clock, `sessions` reports both, and a session untouched for `LURIEN_SESSION_IDLE_MS` is closed by the reaper rather than leaked. |
 | `src/launch.rs`, `resolve.rs`, `goto.rs` | launch contract | Engine required, missing binary is `Err`, captcha is a property of `goto`. |
 | `build.rs`, `src/catalog.rs` | vendor catalog | `build.rs` compiles `captcha/kinds/*.toml` into a table; `catalog.rs` turns it into probe selectors and token hooks, addressed by kind only. No Rust source names a vendor, and a test proves it. |
@@ -84,6 +86,8 @@ the directory.
 | `Snapshot.sys.mjs` | per-context compositor snapshot as PNG |
 | `HelperSock.sys.mjs` | loopback-only line protocol to a helper process |
 | `Solver.sys.mjs` | the pipeline; every claimed kind ends in a token write or a typed refusal |
+| `Geo.sys.mjs` | the shape and range of a position, and the one call that applies it to a top-level context |
+| `Control.sys.mjs` | the driver's control channel: loopback socket, token per session, one JSON line in and out |
 | `Bootstrap.sys.mjs` | reads the config out of the environment, registers the actor, idempotent start |
 
 CI (`.github/workflows/ci.yml`):

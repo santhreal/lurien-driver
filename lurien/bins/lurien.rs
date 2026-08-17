@@ -92,6 +92,18 @@ fn global_args() -> Vec<Arg> {
             .long("download-dir")
             .global(true)
             .help("Directory downloads land in. Default is a fresh one per session."),
+        Arg::new("allow")
+            .long("allow")
+            .global(true)
+            .help("Permissions granted without asking, comma separated. Default is deny."),
+        Arg::new("prompt")
+            .long("prompt")
+            .global(true)
+            .help("Permissions the browser asks about. A prompt nobody answers blocks the page."),
+        Arg::new("geolocation")
+            .long("geolocation")
+            .global(true)
+            .help("Position pages read, as lat,lon[,accuracy_m]. Default is the persona's region."),
     ]
 }
 
@@ -250,12 +262,25 @@ fn launch_options(matches: &ArgMatches) -> Result<BrowserLaunchOptions, Error> {
         })?),
         None => None,
     };
+    let list = |key: &str| {
+        matches
+            .get_one::<String>(key)
+            .map(|v| lurien::PermissionPolicy::split_list(v))
+            .unwrap_or_default()
+    };
+    let geolocation = match matches.get_one::<String>("geolocation") {
+        Some(spec) => Some(lurien::geo::parse_position(spec)?),
+        None => None,
+    };
     Ok(BrowserLaunchOptions {
         profile: parse_persona(persona)?,
         headless: matches.get_flag("headless"),
         profile_dir: matches.get_one::<String>("profile-dir").cloned(),
         proxy,
         download_dir: matches.get_one::<String>("download-dir").cloned(),
+        permissions: lurien::PermissionPolicy::from_lists(&list("allow"), &list("prompt"))?,
+        geolocation,
+        geo: None,
     })
 }
 

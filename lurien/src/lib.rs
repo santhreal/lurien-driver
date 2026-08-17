@@ -25,12 +25,15 @@ pub mod as_profile;
 pub mod catalog;
 pub mod challenge;
 pub mod chooser;
+pub mod control;
 pub mod download;
 pub mod error;
+pub mod geo;
 pub mod goto;
 pub mod launch;
 pub mod locator;
 pub mod mcp;
+pub mod permission;
 pub mod profile_import;
 pub mod resolve;
 pub mod serve;
@@ -47,8 +50,11 @@ use runtime_foxdriver::{CapturedCookie, FrameId, Page};
 pub use as_profile::as_profile;
 pub use error::Error;
 pub use challenge::{ChallengeConfig, EngineOutcome};
+pub use control::Control;
+pub use geo::{Geolocation, Position};
 pub use goto::{ChallengeKind, GotoOutcome};
 pub use launch::LaunchOptions as BrowserLaunchOptions;
+pub use permission::{Grant, PermissionPolicy};
 pub use locator::{Form, Resolved};
 pub use snapshot::{Node, Snapshot};
 pub use profile_import::{import_profile, ImportReport};
@@ -64,6 +70,9 @@ pub struct Browser {
     /// the table lives here rather than in the page: tagging the DOM to mark a
     /// match would be visible to page script.
     handles: std::sync::Mutex<Option<Snapshot>>,
+    /// The position this session serves and the channel that moves it. Held here
+    /// because the engine was told about the channel at launch.
+    geo: std::sync::Arc<geo::Geolocation>,
 }
 
 impl Browser {
@@ -78,20 +87,30 @@ impl Browser {
     }
 
     /// Import a real Firefox profile, then launch wearing it.
+    ///
+    /// Takes the whole launch contract, so an imported profile keeps the
+    /// session's permissions and position service instead of quietly launching
+    /// with the defaults.
     pub async fn as_profile(
         src: &std::path::Path,
         dest: Option<&std::path::Path>,
-        profile: StealthProfile,
-        headless: bool,
+        opts: LaunchOptions,
     ) -> Result<(Self, ImportReport), Error> {
-        let (page, report) = as_profile::as_profile(src, dest, profile, headless, None).await?;
-        Ok((Self::wrap(page), report))
+        let (launched, report) = as_profile::as_profile(src, dest, opts).await?;
+        Ok((Self::wrap(launched), report))
     }
 
-    fn wrap(page: Page) -> Self {
+    /// The position this session serves and the channel that moves it.
+    #[must_use]
+    pub fn geo(&self) -> &std::sync::Arc<geo::Geolocation> {
+        &self.geo
+    }
+
+    fn wrap(launched: launch::Launched) -> Self {
         Self {
-            page,
+            page: launched.page,
             handles: std::sync::Mutex::new(None),
+            geo: launched.geo,
         }
     }
 

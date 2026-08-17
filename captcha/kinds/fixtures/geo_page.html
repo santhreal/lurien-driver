@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>position</title>
+</head>
+<body>
+<p id="status">idle</p>
+<script>
+// A fix arrives asynchronously, so it is parked in a global the driver can read
+// with a plain expression. Nothing here fakes a position: every value comes from
+// navigator.geolocation, which is the stock object.
+window.lurienFix = null;
+window.lurienErr = null;
+
+window.lurienAsk = function () {
+  window.lurienFix = null;
+  window.lurienErr = null;
+  document.getElementById('status').textContent = 'asking';
+  navigator.geolocation.getCurrentPosition(
+    function (p) {
+      window.lurienFix = {
+        latitude: p.coords.latitude,
+        longitude: p.coords.longitude,
+        accuracy: p.coords.accuracy
+      };
+      document.getElementById('status').textContent = 'fixed';
+    },
+    function (e) {
+      window.lurienErr = { code: e.code, message: e.message };
+      document.getElementById('status').textContent = 'refused';
+    },
+    // A cached fix would hide a position that moved mid-session.
+    { maximumAge: 0, timeout: 9000, enableHighAccuracy: false }
+  );
+  return 'asked';
+};
+
+window.lurienRead = function () {
+  return JSON.stringify({ fix: window.lurienFix, err: window.lurienErr });
+};
+
+window.lurienPermission = 'unknown';
+if (navigator.permissions) {
+  navigator.permissions.query({ name: 'geolocation' }).then(function (status) {
+    window.lurienPermission = status.state;
+  });
+}
+</script>
+</body>
+</html>

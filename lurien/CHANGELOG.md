@@ -137,6 +137,23 @@
   page movement and a sticky header appears once. An element is described in the
   same selector language every act verb takes. Every face now reports a capture's
   pixel size next to its byte count.
+- Position and permissions. The engine applies a session's position inside the
+  process that owns the tab, which is where `navigator.geolocation` reads one, so
+  a page that has already asked follows a move without a reload. Every platform
+  provider (GeoClue, CoreLocation, gpsd) is off by name and the network provider
+  points nowhere, so the host can never answer. The starting position is the
+  region the persona's timezone names, so what a page reads cannot contradict the
+  clock it reads. `geolocation-set` moves the live session, `geolocation-clear`
+  puts the persona back, and `geolocation` reports the position, whether it is an
+  override, and whether pages may read it. Permissions are written into the
+  profile at launch and denied unless `--allow` names them: Gecko reads them at
+  startup, so `permissions` reports the policy and refuses a mid-session change
+  with the launch argument that works.
+- A privileged control channel between the driver and the engine, in
+  `LURIEN_CONTROL`: a loopback socket the engine binds on a port chosen before
+  launch, one JSON line in and one out, every request carrying a per-session
+  token. It exists for state no client outside a browser can reach, starting with
+  a device position, and it stays closed for a session that does not ask.
 - A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
   `drag_profile` and `prelude` when it names none. Without this the engine fell
   back to a built-in constant, so every session moved identically.

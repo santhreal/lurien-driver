@@ -28,13 +28,13 @@ async fn run(session: &Session, args: &Args) -> Result<Output, Error> {
     let src = args.path("profile")?;
     let dest = args.opt_path("dest");
     let headless = args.bool("headless", session.options().headless);
-    let (browser, report) = crate::Browser::as_profile(
-        &src,
-        dest.as_deref(),
-        session.options().profile,
+    // The imported profile joins this session; it does not start a new contract,
+    // so permissions and the position provider come along unchanged.
+    let opts = crate::launch::LaunchOptions {
         headless,
-    )
-    .await?;
+        ..session.options().clone()
+    };
+    let (browser, report) = crate::Browser::as_profile(&src, dest.as_deref(), opts).await?;
     session.adopt(browser).await;
     Ok(Output::Json(serde_json::json!({
         "cookies": report.cookies,

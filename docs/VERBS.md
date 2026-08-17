@@ -102,6 +102,10 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 | Verb | Arguments | Output | Stability | Summary |
 |---|---|---|---|---|
 | `as` | `profile`, `dest?`, `headless?` | json | stable | Import a real Firefox profile (cookies, logins, localStorage) and switch to it. |
+| `geolocation` | - | json | stable | Report the position pages read from this session, and whether they may read it. |
+| `geolocation-clear` | - | json | stable | Drop a position override and serve the persona's own coordinates again. |
+| `geolocation-set` | `latitude`, `longitude`, `accuracy_m?` | json | stable | Serve a different position from the next fix on. The live page needs no reload. |
+| `permissions` | `allow?`, `prompt?` | json | stable | Report what this session answers for geolocation, notifications, camera and the rest. Set at launch with --allow and --prompt; a live session cannot change it. |
 
 ## context
 

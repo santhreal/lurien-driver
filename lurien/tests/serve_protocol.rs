@@ -108,6 +108,10 @@ const LEGACY_COMMANDS: &[&str] = &[
     "dom_clear_mutation_observer",
     "batch",
     "dom_batch",
+    "geolocation",
+    "geolocation_set",
+    "geolocation_clear",
+    "permissions",
 ];
 
 /// Arguments rich enough for any legacy command to translate. Extra keys are
@@ -154,6 +158,9 @@ fn sample_args() -> HashMap<String, Value> {
             ("focus_selector", "#input"),
             ("download_url", "https://example.test/file"),
             ("checked", "true"),
+            ("latitude", "52.52"),
+            ("longitude", "13.405"),
+            ("accuracy_m", "55"),
         ]
         .map(|(k, v)| (k.to_string(), Value::from(v))),
     )
@@ -195,6 +202,53 @@ fn every_translation_survives_the_verb_spec() {
         args.validate(spec)
             .unwrap_or_else(|e| panic!("{name} -> {target}: {e}"));
     }
+}
+
+/// A client that sends a JSON number rather than a quoted one used to have that
+/// argument dropped: every reader in this face expects the historical string
+/// shape, so `{"ms": 50}` silently became the default and `{"latitude": 52.52}`
+/// became "missing required argument". Normalising scalars at decode closes the
+/// class for every command at once, so this covers a numeric argument, a boolean,
+/// and one of each shape that already worked.
+#[test]
+fn a_scalar_sent_as_json_reaches_the_verb() {
+    let numeric = json!({
+        "schema_version": SCHEMA_VERSION,
+        "command": "geolocation_set",
+        "backend": BACKEND,
+        "browser_context_id": "ctx-1",
+        "args": {"latitude": 52.52, "longitude": 13.405, "accuracy_m": 30},
+    });
+    let command: Command = serde_json::from_value(numeric).expect("command decodes");
+    let (verb_name, args) = serve::translate(&command).expect("translates");
+    assert_eq!(verb_name, "geolocation-set");
+    assert_eq!(args.f64("latitude", 0.0), 52.52);
+    assert_eq!(args.f64("longitude", 0.0), 13.405);
+    assert_eq!(args.f64("accuracy_m", 0.0), 30.0);
+
+    let mixed = json!({
+        "schema_version": SCHEMA_VERSION,
+        "command": "dom_wait",
+        "backend": BACKEND,
+        "browser_context_id": "ctx-1",
+        "args": {"ms": 50},
+    });
+    let command: Command = serde_json::from_value(mixed).expect("command decodes");
+    let (verb_name, args) = serve::translate(&command).expect("translates");
+    assert_eq!(verb_name, "wait");
+    assert_eq!(args.u64("ms", 0), 50);
+
+    let boolean = json!({
+        "schema_version": SCHEMA_VERSION,
+        "command": "screenshot",
+        "backend": BACKEND,
+        "browser_context_id": "ctx-1",
+        "args": {"full_page": true},
+    });
+    let command: Command = serde_json::from_value(boolean).expect("command decodes");
+    let (verb_name, args) = serve::translate(&command).expect("translates");
+    assert_eq!(verb_name, "screenshot");
+    assert!(args.bool("full_page", false));
 }
 
 #[test]

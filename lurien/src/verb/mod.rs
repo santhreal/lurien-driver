@@ -141,7 +141,8 @@ impl Domain {
                  DOM sinks."
             }
             Self::Profile => {
-                "Use this to choose or inspect the persona, or to import a real Firefox profile."
+                "Use this for what the session claims to be: the persona, an imported real \
+                 Firefox profile, the position pages read, and the permissions they get."
             }
             Self::Context => {
                 "Use this to run several independent sessions in one browser, each with its own \
