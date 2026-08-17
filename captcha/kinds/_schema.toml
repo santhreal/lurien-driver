@@ -59,6 +59,20 @@ target_forms = [
     "role:",
 ]
 
+# A `visual` binding also carries a [grid] table. A tile challenge asks a question
+# in words about pictures, so the binding says where the words are and what a tile
+# is; the browser reads both in the widget's own context and answers with indices
+# into the list it laid out.
+#
+#   prompt   selector of the element holding the question text
+#   cell     selector matching every tile, in document order
+#   submit   optional selector of the button that confirms the set. A widget that
+#            scores each tile as it is clicked has none.
+#
+# A `visual` binding with no [grid] table is still recognized, and its solve is
+# refused by name: the widget is known, the selectors that would answer it are
+# not. That is a smaller lie than a table of guessed class names.
+
 # A `pow` binding also carries a [work] table. Proof of work is arithmetic, not
 # perception: the binding says where to read the challenge, how hard it is, and
 # where the answer goes, and the browser does the rest with no helper process.

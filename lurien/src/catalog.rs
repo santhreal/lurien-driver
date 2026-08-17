@@ -43,6 +43,9 @@ pub struct VendorBinding {
     /// `[work]` pairs for an arithmetic kind: where to read the challenge, how
     /// hard it is, and where the answer goes. Empty for a perceptual kind.
     pub work: &'static [(&'static str, &'static str)],
+    /// `[grid]` pairs for a tile kind: where the question is written, what a tile
+    /// is, and what confirms the set. Empty for every other kind.
+    pub grid: &'static [(&'static str, &'static str)],
 }
 
 include!(concat!(env!("OUT_DIR"), "/catalog.rs"));
@@ -150,14 +153,21 @@ pub fn catalog_json() -> serde_json::Value {
                     "token_cookies": b.token_cookies,
                     "token_storage": b.token_storage,
                     "token_messages": b.token_messages,
-                    "work": b.work
-                        .iter()
-                        .map(|(k, v)| ((*k).to_string(), serde_json::Value::from(*v)))
-                        .collect::<serde_json::Map<String, serde_json::Value>>(),
+                    "work": pairs(b.work),
+                    "grid": pairs(b.grid),
                 })
             })
             .collect(),
     )
+}
+
+/// One binding table as the engine reads it: a JSON object of string pairs.
+fn pairs(table: &'static [(&'static str, &'static str)]) -> serde_json::Value {
+    table
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), serde_json::Value::from(*v)))
+        .collect::<serde_json::Map<String, serde_json::Value>>()
+        .into()
 }
 
 #[cfg(test)]
@@ -226,6 +236,25 @@ mod tests {
                 !widget_selector(kind).is_empty(),
                 "kind {kind} is probed with an empty selector"
             );
+        }
+    }
+
+    #[test]
+    fn a_binding_table_reaches_the_engine_as_an_object_of_its_own_keys() {
+        // `[work]` and `[grid]` are data: a key added to a vendor file has to
+        // arrive without a Rust change, and an empty table has to arrive as an
+        // object rather than as null, because the engine reads `decision.grid.cell`
+        // before it decides whether the binding can be solved.
+        let table: &'static [(&'static str, &'static str)] =
+            &[("cell", ".tile"), ("prompt", "#ask")];
+        assert_eq!(
+            pairs(table),
+            serde_json::json!({ "cell": ".tile", "prompt": "#ask" })
+        );
+        assert_eq!(pairs(&[]), serde_json::json!({}));
+        for row in catalog_json().as_array().expect("catalog array") {
+            assert!(row["work"].is_object(), "work is not an object: {row}");
+            assert!(row["grid"].is_object(), "grid is not an object: {row}");
         }
     }
 

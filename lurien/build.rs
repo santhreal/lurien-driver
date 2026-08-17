@@ -62,6 +62,9 @@ struct Binding {
     token_messages: Vec<String>,
     /// `[work]` for an arithmetic kind: addresses, not values. Empty otherwise.
     work: BTreeMap<String, String>,
+    /// `[grid]` for a kind whose answer is a set of tiles: where the question is
+    /// written, what a tile is, and what confirms the set. Empty otherwise.
+    grid: BTreeMap<String, String>,
 }
 
 fn parse(path: &Path) -> Binding {
@@ -76,6 +79,7 @@ fn parse(path: &Path) -> Binding {
     let mut token_storage = Vec::new();
     let mut token_messages = Vec::new();
     let mut work: BTreeMap<String, String> = BTreeMap::new();
+    let mut grid: BTreeMap<String, String> = BTreeMap::new();
     let mut section = String::new();
 
     for line in raw.lines() {
@@ -123,6 +127,9 @@ fn parse(path: &Path) -> Binding {
             ("work", _) => {
                 work.insert(key.to_string(), unquote(value));
             }
+            ("grid", _) => {
+                grid.insert(key.to_string(), unquote(value));
+            }
             _ => {}
         }
     }
@@ -139,6 +146,7 @@ fn parse(path: &Path) -> Binding {
         token_storage,
         token_messages,
         work,
+        grid,
     }
 }
 
@@ -188,16 +196,20 @@ fn write_binding(out: &mut String, binding: &Binding, path: &Path) {
         s.push(']');
         s
     };
-    // `work` is emitted as sorted pairs rather than a struct: the engine reads
-    // the keys the schema documents, and a new key needs no Rust change.
-    let mut work = String::from("&[");
-    for (k, v) in &binding.work {
-        let _ = write!(work, "({k:?}, {v:?}), ");
-    }
-    work.push(']');
+    // `work` and `grid` are emitted as sorted pairs rather than structs: the
+    // engine reads the keys the schema documents, and a new key needs no Rust
+    // change.
+    let pairs = |table: &std::collections::BTreeMap<String, String>| -> String {
+        let mut s = String::from("&[");
+        for (k, v) in table {
+            let _ = write!(s, "({k:?}, {v:?}), ");
+        }
+        s.push(']');
+        s
+    };
     let _ = writeln!(
         out,
-        "    VendorBinding {{ name: {:?}, kind: {:?}, source: {:?}, target: {:?}, handle: {:?}, iframe_src: {}, custom_elements: {}, selectors: {}, cookies: {}, scripts: {}, token_inputs: {}, token_cookies: {}, token_storage: {}, token_messages: {}, work: {} }},",
+        "    VendorBinding {{ name: {:?}, kind: {:?}, source: {:?}, target: {:?}, handle: {:?}, iframe_src: {}, custom_elements: {}, selectors: {}, cookies: {}, scripts: {}, token_inputs: {}, token_cookies: {}, token_storage: {}, token_messages: {}, work: {}, grid: {} }},",
         binding.name,
         binding.kind,
         path.file_name().and_then(|s| s.to_str()).unwrap_or_default(),
@@ -212,6 +224,7 @@ fn write_binding(out: &mut String, binding: &Binding, path: &Path) {
         strings(&binding.token_cookies),
         strings(&binding.token_storage),
         strings(&binding.token_messages),
-        work,
+        pairs(&binding.work),
+        pairs(&binding.grid),
     );
 }
