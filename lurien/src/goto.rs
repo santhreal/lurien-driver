@@ -68,11 +68,14 @@ pub struct GotoOutcome {
 /// silent the page probe classifies, which is what happens on a clean page and
 /// on an engine built without the subsystem.
 pub async fn goto(page: &Page, url: &str) -> Result<GotoOutcome, Error> {
+    let evidence = crate::challenge::ChallengeConfig::for_process().evidence;
+    // Marked before the navigation, so a verdict the engine wrote for an earlier
+    // visit to this same url is not read as this visit's.
+    let mark = crate::challenge::mark(&evidence);
     page.goto(url)
         .await
         .map_err(|e| Error::Other(format!("goto {url}: {e}")))?;
-    let evidence = crate::challenge::ChallengeConfig::for_process().evidence;
-    let (kind, engine) = classify_with_score_wait(page, &evidence, url).await?;
+    let (kind, engine) = classify_with_score_wait(page, &evidence, url, mark).await?;
     let final_url = page.url().await.unwrap_or_else(|_| url.to_string());
     if let Some(report) = engine.as_ref() {
         if !report.solved {
@@ -141,11 +144,12 @@ async fn classify_with_score_wait(
     page: &Page,
     evidence: &std::path::Path,
     url: &str,
+    mark: u64,
 ) -> Result<(ChallengeKind, Option<crate::challenge::EngineOutcome>), Error> {
     let start = tokio::time::Instant::now();
     let mut page_kind: Option<ChallengeKind> = None;
     loop {
-        if let Some(report) = crate::challenge::outcome_for(evidence, url) {
+        if let Some(report) = crate::challenge::outcome_for(evidence, url, mark) {
             let kind = ChallengeKind::parse(&report.kind);
             return Ok((kind, Some(report)));
         }
@@ -161,7 +165,7 @@ async fn classify_with_score_wait(
             // A page the engine took is not decided by the probe. The probe cannot
             // see into the widget's own context, so it calls a page being solved
             // clean, and returning that closes the session mid-solve.
-            let engine_busy = crate::challenge::taken(evidence, url);
+            let engine_busy = crate::challenge::taken(evidence, url, mark);
             let engine_could_still_report = (engine_busy
                 || !matches!(kind, ChallengeKind::None))
                 && elapsed_ms < ENGINE_WAIT_MS;

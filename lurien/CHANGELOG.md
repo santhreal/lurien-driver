@@ -34,9 +34,10 @@
   observes the vendor token appearing in a field or a cookie. Nothing is reported as
   solved on the strength of a click.
 - `LURIEN_CHALLENGE` carries the catalog, the evidence path, the budget, the claimed
-  kinds, and the approach path (sampled by `guise`) to the engine. `lurien::challenge`
-  owns that contract; the catalog is the same `captcha/kinds/*.toml` table serialized as
-  JSON, so the product has exactly one TOML parser.
+  kinds, and a deck of approach paths, drag profiles and visit plans (sampled by
+  `guise`) with the seed they were drawn with. `lurien::challenge` owns that contract;
+  the catalog is the same `captcha/kinds/*.toml` table serialized as JSON, so the
+  product has exactly one TOML parser.
 - `goto` returns an `engine` outcome next to the kind. When the engine reports, it wins
   over the page probe, so a cleared widget is not re-reported as pending.
 - A kind is claimed only when the scorecard carries a dated row for it. An unclaimed kind
@@ -198,9 +199,20 @@
   had and the verb to run, rather than resolving to whatever is in that slot now.
   The table is refreshed from the browser's own tree, not from a cached context
   list, so a frame the page removed reads as gone.
-- A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
-  `drag_profile` and `prelude` when it names none. Without this the engine fell
-  back to a built-in constant, so every session moved identically.
+- Dynamics are per interaction, not per session. The driver samples a deck of
+  approach paths, drag profiles and visit plans from the persona corpus and ships
+  it with the 32-bit seed it drew them with; `Dynamics.sys.mjs` deals one per
+  interaction in that seeded order and never the same entry twice in a row, and
+  each evidence row records the entries it took as `dyn`. Two clicks on one page,
+  or nine cells of one grid, used to move along one curve, which no hand does.
+  `LURIEN_DYNAMICS_SEED` names the seed, so a solve a vendor scored can be run
+  again with the same motion. A caller that names one exact `trajectory`,
+  `drag_profile` or `prelude` keeps it and is given no deck for it.
+- `goto` reads only the evidence the engine wrote for this navigation. It marks the
+  file before navigating, so a second visit to a url is no longer answered with the
+  first visit's verdict: that reported a page as solved while the engine was still
+  clicking it, and hid a refusal behind an earlier pass. A byte offset, not a
+  timestamp, because this driver can shift the browser's clock.
 - Evidence carries a `taken` row when a page's pipeline starts. A cross-origin widget
   is invisible to the page probe, so `goto` used to see a clean page and end the
   session mid-solve; it now waits for the verdict. A diagnostic row is never read as

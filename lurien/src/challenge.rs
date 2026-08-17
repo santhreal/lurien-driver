@@ -8,9 +8,10 @@
 //! - the catalog, already parsed from `captcha/kinds/` at build time, so the
 //!   browser holds no TOML reader and cannot disagree with the driver about what
 //!   a page is,
-//! - the pointer trajectory, sampled from the same persona corpus as the rest of
-//!   the session, so a click matches the identity that made the TLS handshake,
-//!   and the kinds this build is allowed to act on,
+//! - a deck of pointer trajectories, drag profiles and preludes, each sampled
+//!   from the same persona corpus as the rest of the session, so a click matches
+//!   the identity that made the TLS handshake and two clicks in one session do
+//!   not match each other, and the kinds this build is allowed to act on,
 //! - an evidence path.
 //!
 //! It reads back the evidence: what the engine saw, what it did, and whether the
@@ -37,6 +38,13 @@ const BUDGET_MS: u64 = 20_000;
 /// Points in one approach path. Enough curvature to carry the corpus shape,
 /// short enough that the whole path is one event burst.
 const PATH_POINTS: usize = 24;
+
+/// Entries in each dynamics deck.
+///
+/// The engine deals one per interaction, so this is how many touches a page may
+/// take before a shape repeats. A dozen covers a grid solve; the deck is sampled
+/// once at launch, so a larger one costs launch time for motion no page uses.
+const DECK: usize = 12;
 
 /// What the engine reported for one page.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,14 +117,16 @@ impl ChallengeConfig {
         if let Some(raw) = self.verbatim.as_ref() {
             return with_dynamics(raw);
         }
+        let seed = dynamics_seed();
         let mut config = serde_json::json!({
             "catalog": catalog::catalog_json(),
             "evidence": self.evidence.display().to_string(),
             "budget_ms": self.budget_ms,
             "claimed_kinds": CLAIMED_KINDS,
-            "trajectory": approach_path(),
-            "drag_profile": drag_profile(),
-            "prelude": prelude_plan(),
+            "dynamics_seed": seed,
+            "trajectory_deck": deck(seed, TRAJECTORY_SALT, approach_path),
+            "drag_deck": deck(seed, DRAG_SALT, drag_profile),
+            "prelude_deck": deck(seed, PRELUDE_SALT, prelude_plan),
         });
         if let Some(dir) = self.modules.as_ref() {
             config["modules"] = serde_json::Value::String(dir.display().to_string());
@@ -161,7 +171,8 @@ fn evidence_from(raw: &str) -> Option<PathBuf> {
 /// Passing such a config through untouched leaves the engine with no trajectory
 /// and no drag profile, and a built-in constant is a signature: every session
 /// would move identically. A config that does name its own dynamics keeps them,
-/// which is how a test drives a shape the sampler would never produce.
+/// which is how a test drives a shape the sampler would never produce, and a
+/// named shape is never joined by a deck, because the deck would outrank it.
 fn with_dynamics(raw: &str) -> String {
     let Ok(mut value) = serde_json::from_str::<serde_json::Value>(raw) else {
         return raw.to_string();
@@ -169,9 +180,24 @@ fn with_dynamics(raw: &str) -> String {
     let Some(map) = value.as_object_mut() else {
         return raw.to_string();
     };
-    map.entry("trajectory").or_insert_with(approach_path);
-    map.entry("drag_profile").or_insert_with(drag_profile);
-    map.entry("prelude").or_insert_with(prelude_plan);
+    let seed = map
+        .get("dynamics_seed")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|raw| u32::try_from(raw).ok())
+        .unwrap_or_else(dynamics_seed);
+    if !map.contains_key("trajectory") {
+        map.entry("trajectory_deck")
+            .or_insert_with(|| deck(seed, TRAJECTORY_SALT, approach_path));
+    }
+    if !map.contains_key("drag_profile") {
+        map.entry("drag_deck")
+            .or_insert_with(|| deck(seed, DRAG_SALT, drag_profile));
+    }
+    if !map.contains_key("prelude") {
+        map.entry("prelude_deck")
+            .or_insert_with(|| deck(seed, PRELUDE_SALT, prelude_plan));
+    }
+    map.insert("dynamics_seed".to_string(), seed.into());
     value.to_string()
 }
 
@@ -188,16 +214,55 @@ fn source_modules() -> Option<PathBuf> {
     std::env::var_os("LURIEN_CHALLENGE_MODULES").map(PathBuf::from)
 }
 
+/// Environment variable naming the dynamics seed, so a run can be replayed.
+pub const SEED_ENV: &str = "LURIEN_DYNAMICS_SEED";
+
+/// Salts, so one seed yields three unrelated decks rather than three views of one
+/// stream: a session whose drags mirror its approaches is a correlation a vendor
+/// can measure across visits.
+const TRAJECTORY_SALT: u64 = 0x5f37_2d1b;
+const DRAG_SALT: u64 = 0xb1c9_44a7;
+const PRELUDE_SALT: u64 = 0x27e6_8f03;
+
+/// The seed the session's dynamics are drawn from.
+///
+/// Entropy by default: a fixed seed shared by every install would be the same
+/// signature a constant path is. [`SEED_ENV`] names one instead, which is how a
+/// solve that a vendor scored, or a test that watched two clicks differ, is run
+/// again with the same motion.
+fn dynamics_seed() -> u32 {
+    use rand::Rng;
+    if let Ok(raw) = std::env::var(SEED_ENV) {
+        if let Ok(seed) = raw.trim().parse::<u32>() {
+            return seed;
+        }
+    }
+    rand::rngs::StdRng::from_entropy().gen()
+}
+
+/// `DECK` independent samples from one sampler, reproducible from `seed`.
+///
+/// The driver owns the corpus and the sampler; the engine owns the order, because
+/// only the browser knows how many widgets a page held. So every entry is drawn
+/// here, at launch, and dealt there, per interaction.
+fn deck(
+    seed: u32,
+    salt: u64,
+    sample: fn(&mut rand::rngs::StdRng) -> serde_json::Value,
+) -> serde_json::Value {
+    let mut rng = rand::rngs::StdRng::seed_from_u64(u64::from(seed) ^ salt);
+    serde_json::Value::Array((0..DECK).map(|_| sample(&mut rng)).collect())
+}
+
 /// A pointer path in the unit square of the target, from outside the widget to
 /// its centre, sampled from the persona's own corpus.
 ///
 /// The engine maps these to the widget's own coordinates. It never generates
 /// motion: a browser that invents its own curve would contradict the persona
 /// that produced the handshake.
-fn approach_path() -> serde_json::Value {
+fn approach_path(rng: &mut rand::rngs::StdRng) -> serde_json::Value {
     let sampler = MouseSampler::new();
-    let mut rng = rand::rngs::StdRng::from_entropy();
-    let points = sampler.resampled_path(-0.35, -0.28, 0.5, 0.5, PATH_POINTS, 0.004, &mut rng);
+    let points = sampler.resampled_path(-0.35, -0.28, 0.5, 0.5, PATH_POINTS, 0.004, rng);
     let last = points.len().saturating_sub(1);
     let rows: Vec<serde_json::Value> = points
         .iter()
@@ -228,13 +293,12 @@ const OVERSHOOT: (f64, f64) = (0.02, 0.05);
 /// two corrections. A vendor that scores a slider scores the dynamics, not the
 /// landing: constant speed in a straight line is the shape that fails, and it is
 /// the shape every driver-side `dragAndDrop` produces.
-fn drag_profile() -> serde_json::Value {
+fn drag_profile(rng: &mut rand::rngs::StdRng) -> serde_json::Value {
     use rand::Rng;
     let sampler = MouseSampler::new();
-    let mut rng = rand::rngs::StdRng::from_entropy();
     // A drag runs along its own axis, so the sampled path supplies the timing
     // shape and the wobble; the fraction is its horizontal progress.
-    let points = sampler.resampled_path(0.0, 0.0, 1.0, 0.0, DRAG_STEPS, 0.9, &mut rng);
+    let points = sampler.resampled_path(0.0, 0.0, 1.0, 0.0, DRAG_STEPS, 0.9, rng);
     let last = points.len().saturating_sub(1);
     let mut rows: Vec<serde_json::Value> = Vec::with_capacity(DRAG_STEPS + 3);
     for (i, (x, y)) in points.iter().enumerate() {
@@ -272,11 +336,13 @@ const WANDER_POINTS: usize = 14;
 /// `guise::human::scroll` where each step is `{delta, mode, lines, dt}` in the
 /// wheel device's own units, `wander` is a pointer path in viewport fractions,
 /// and `dwell_ms` is the hover before the act.
-fn prelude_plan() -> serde_json::Value {
+///
+/// The wheel session and the wander come from `rng`; the pauses come from the
+/// pacing library's own draw, so a seeded deck replays its paths, not its dwells.
+fn prelude_plan(rng: &mut rand::rngs::StdRng) -> serde_json::Value {
     use guise::human::scroll::{HumanScrollConfig, HumanScroller, ScrollBehavior};
     use guise::human::timing::ActionDelay;
     use guise::human::wheel::WheelDevice;
-    let mut rng = rand::rngs::StdRng::from_entropy();
     // Reading is the intent that fits a page holding a challenge: the visitor is
     // there for the content, not skimming for a link.
     let scroller = HumanScroller::new(HumanScrollConfig {
@@ -288,7 +354,7 @@ fn prelude_plan() -> serde_json::Value {
     });
     let step_px = WheelDevice::MouseWheel.properties().step_px.max(1.0);
     let scroll: Vec<serde_json::Value> = scroller
-        .plan(&mut rng)
+        .plan(rng)
         .into_iter()
         .map(|step| {
             // A wheel event carries its delta in the units its device reports:
@@ -311,7 +377,7 @@ fn prelude_plan() -> serde_json::Value {
     // Across the viewport, not towards the widget: this is the traffic that
     // happens before the widget is a target at all.
     let sampler = MouseSampler::new();
-    let points = sampler.resampled_path(0.08, 0.12, 0.72, 0.66, WANDER_POINTS, 0.05, &mut rng);
+    let points = sampler.resampled_path(0.08, 0.12, 0.72, 0.66, WANDER_POINTS, 0.05, rng);
     let wander: Vec<serde_json::Value> = points
         .iter()
         .map(|(x, y)| {
@@ -330,15 +396,33 @@ fn prelude_plan() -> serde_json::Value {
     })
 }
 
-/// The engine's last word on `url`, if it wrote one.
+/// Where the evidence file ends right now.
 ///
-/// Reads the newest matching row. A missing file, an unreadable file, or a file
-/// with no row for this page all mean the same thing: the engine did not report,
-/// so the caller must not claim it did.
+/// A verdict is only a verdict for the visit that asked for it. The engine
+/// appends, one row per page it takes, and two visits to one url in one session
+/// are two rows with the same url: a reader that takes the newest matching row
+/// returns the previous visit's verdict the moment the second navigation starts,
+/// which reports a page as solved while the engine is still clicking it. So a
+/// caller marks the file before it navigates and reads only past that mark.
+///
+/// A byte offset, not a timestamp: this driver can shift the browser's wall clock
+/// on request, so a row's `at` is not a reliable ordering, and an append-only file
+/// length is.
 #[must_use]
-pub fn outcome_for(evidence: &Path, url: &str) -> Option<EngineOutcome> {
+pub fn mark(evidence: &Path) -> u64 {
+    std::fs::metadata(evidence).map(|m| m.len()).unwrap_or(0)
+}
+
+/// The engine's last word on `url` since `from`, if it wrote one.
+///
+/// Reads the newest matching row appended after the mark. A missing file, an
+/// unreadable file, or a file with no row for this page since the mark all mean
+/// the same thing: the engine did not report, so the caller must not claim it did.
+#[must_use]
+pub fn outcome_for(evidence: &Path, url: &str, from: u64) -> Option<EngineOutcome> {
     let text = std::fs::read_to_string(evidence).ok()?;
-    text.lines()
+    since(&text, from)
+        .lines()
         .rev()
         .filter_map(|line| parse_row(line))
         .find(|row| url.is_empty() || same_page(&row.url, url))
@@ -353,11 +437,11 @@ pub fn outcome_for(evidence: &Path, url: &str) -> Option<EngineOutcome> {
 /// mid-solve. A `taken` row with no verdict after it means the work is still
 /// running.
 #[must_use]
-pub fn taken(evidence: &Path, url: &str) -> bool {
+pub fn taken(evidence: &Path, url: &str, from: u64) -> bool {
     let Ok(text) = std::fs::read_to_string(evidence) else {
         return false;
     };
-    text.lines().any(|line| {
+    since(&text, from).lines().any(|line| {
         let Ok(row) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
             return false;
         };
@@ -367,6 +451,17 @@ pub fn taken(evidence: &Path, url: &str) -> bool {
         let seen = row.get("url").and_then(|v| v.as_str()).unwrap_or_default();
         url.is_empty() || same_page(seen, url)
     })
+}
+
+/// The part of the file appended after a mark.
+///
+/// A mark past the end means the file was replaced rather than appended to, and
+/// everything in it is newer than the mark, not older.
+fn since(text: &str, from: u64) -> &str {
+    usize::try_from(from)
+        .ok()
+        .and_then(|from| text.get(from..))
+        .unwrap_or(text)
 }
 
 /// Evidence rows carry the URL the engine saw, which may differ from the URL
@@ -452,14 +547,19 @@ mod tests {
         let bare = r#"{"catalog":[],"evidence":"/tmp/e.jsonl","budget_ms":1000}"#;
         let filled: serde_json::Value =
             serde_json::from_str(&with_dynamics(bare)).expect("filled config is json");
-        assert!(filled["trajectory"].as_array().is_some_and(|p| p.len() >= 8));
-        assert!(filled["drag_profile"].as_array().is_some_and(|p| p.len() >= 12));
+        let paths = filled["trajectory_deck"].as_array().expect("trajectory deck");
+        assert_eq!(paths.len(), DECK);
+        assert!(paths.iter().all(|p| p.as_array().is_some_and(|p| p.len() >= 8)));
+        let drags = filled["drag_deck"].as_array().expect("drag deck");
+        assert_eq!(drags.len(), DECK);
+        assert!(drags.iter().all(|p| p.as_array().is_some_and(|p| p.len() >= 12)));
+        assert!(filled["dynamics_seed"].as_u64().is_some(), "the engine cannot deal without a seed");
         assert_eq!(filled["budget_ms"], 1000);
-        // Two sessions must not share one drag.
+        // Two sessions must not share one deck.
         assert_ne!(
             with_dynamics(bare),
             with_dynamics(bare),
-            "the fill-in reused one profile across sessions"
+            "the fill-in reused one deck across sessions"
         );
 
         let named = r#"{"catalog":[],"drag_profile":[{"f":1.0,"dy":0,"dt":10}],"trajectory":[{"x":0.5,"y":0.5,"dt":1}]}"#;
@@ -467,15 +567,61 @@ mod tests {
             serde_json::from_str(&with_dynamics(named)).expect("kept config is json");
         assert_eq!(kept["drag_profile"].as_array().expect("profile").len(), 1);
         assert_eq!(kept["trajectory"].as_array().expect("path").len(), 1);
+        // A deck outranks a named shape in the engine, so a named shape gets none.
+        assert!(kept.get("trajectory_deck").is_none(), "the named path was outranked by a deck");
+        assert!(kept.get("drag_deck").is_none(), "the named profile was outranked by a deck");
 
         // A config this build cannot parse is still the caller's, and is passed on
         // rather than replaced with one the caller never asked for.
         assert_eq!(with_dynamics("not json"), "not json");
     }
 
+    /// One click per session is the shape every other solver has. A page holding
+    /// two widgets, or a grid taking nine cells, must not repeat one path, and the
+    /// engine cannot sample: the corpus and the sampler live here.
+    #[test]
+    fn a_deck_holds_a_distinct_shape_for_every_interaction() {
+        for (name, salt, sample) in [
+            ("trajectory", TRAJECTORY_SALT, approach_path as fn(&mut _) -> _),
+            ("drag", DRAG_SALT, drag_profile as fn(&mut _) -> _),
+            ("prelude", PRELUDE_SALT, prelude_plan as fn(&mut _) -> _),
+        ] {
+            let dealt = deck(19, salt, sample);
+            let rows = dealt.as_array().expect("deck array");
+            assert_eq!(rows.len(), DECK, "{name} deck is the wrong size");
+            for (i, row) in rows.iter().enumerate() {
+                for (j, other) in rows.iter().enumerate().skip(i + 1) {
+                    assert_ne!(row, other, "{name} deck entries {i} and {j} are one shape");
+                }
+            }
+        }
+    }
+
+    /// A solve a vendor scored, or a test that watched two clicks differ, is only
+    /// worth anything if it can be run again with the same motion.
+    #[test]
+    fn one_seed_replays_every_deck() {
+        assert_eq!(
+            deck(4_242, TRAJECTORY_SALT, approach_path),
+            deck(4_242, TRAJECTORY_SALT, approach_path),
+            "one seed drew two different decks"
+        );
+        assert_ne!(
+            deck(4_242, TRAJECTORY_SALT, approach_path),
+            deck(4_243, TRAJECTORY_SALT, approach_path),
+            "two seeds drew one deck"
+        );
+        // Salted apart: a session whose drags mirror its approaches correlates.
+        assert_ne!(
+            deck(4_242, TRAJECTORY_SALT, approach_path),
+            deck(4_242, DRAG_SALT, approach_path),
+            "two decks came off one stream"
+        );
+    }
+
     #[test]
     fn the_trajectory_stays_inside_the_target_and_ends_at_its_centre() {
-        let path = approach_path();
+        let path = approach_path(&mut rand::rngs::StdRng::from_entropy());
         let points = path.as_array().expect("trajectory array");
         assert!(points.len() >= 8, "a {}-point path is not a path", points.len());
         let last = points.last().expect("last point");
@@ -498,7 +644,7 @@ mod tests {
 
     #[test]
     fn the_drag_profile_overshoots_corrects_and_never_holds_one_speed() {
-        let profile = drag_profile();
+        let profile = drag_profile(&mut rand::rngs::StdRng::from_entropy());
         let steps = profile.as_array().expect("profile array");
         assert!(steps.len() >= 12, "a {}-step drag is not a drag", steps.len());
         let fractions: Vec<f64> = steps
@@ -538,12 +684,13 @@ mod tests {
     #[test]
     fn two_drags_do_not_share_a_profile() {
         // A profile reused across solves is a signature. Sampling is per drag.
-        assert_ne!(drag_profile(), drag_profile());
+        let mut rng = rand::rngs::StdRng::from_entropy();
+        assert_ne!(drag_profile(&mut rng), drag_profile(&mut rng));
     }
 
     #[test]
     fn the_prelude_reads_the_page_before_it_touches_the_widget() {
-        let plan = prelude_plan();
+        let plan = prelude_plan(&mut rand::rngs::StdRng::from_entropy());
         let settle = plan["settle_ms"].as_u64().expect("settle");
         assert!(
             (300..=4_000).contains(&settle),
@@ -602,7 +749,8 @@ mod tests {
     #[test]
     fn two_pages_do_not_share_a_prelude() {
         // Reading behaviour reused across pages is one more constant to match on.
-        assert_ne!(prelude_plan(), prelude_plan());
+        let mut rng = rand::rngs::StdRng::from_entropy();
+        assert_ne!(prelude_plan(&mut rng), prelude_plan(&mut rng));
     }
 
     #[test]
@@ -610,7 +758,9 @@ mod tests {
         let bare = r#"{"catalog":[],"budget_ms":1000}"#;
         let filled: serde_json::Value =
             serde_json::from_str(&with_dynamics(bare)).expect("filled config is json");
-        assert!(filled["prelude"]["scroll"].as_array().is_some_and(|s| !s.is_empty()));
+        let deals = filled["prelude_deck"].as_array().expect("prelude deck");
+        assert_eq!(deals.len(), DECK);
+        assert!(deals.iter().all(|p| p["scroll"].as_array().is_some_and(|s| !s.is_empty())));
 
         // An e2e phase proving a page that was never read is refused needs to ship
         // an empty prelude and have it survive.
@@ -619,12 +769,14 @@ mod tests {
             serde_json::from_str(&with_dynamics(named)).expect("kept config is json");
         assert_eq!(kept["prelude"]["scroll"].as_array().expect("scroll").len(), 0);
         assert_eq!(kept["prelude"]["settle_ms"], 0);
+        assert!(kept.get("prelude_deck").is_none(), "the empty prelude was outranked by a deck");
     }
 
     #[test]
     fn an_absent_evidence_file_is_not_a_pass() {
         let missing = std::env::temp_dir().join("lurien-challenge-does-not-exist.jsonl");
-        assert_eq!(outcome_for(&missing, "https://example.com/"), None);
+        assert_eq!(outcome_for(&missing, "https://example.com/", 0), None);
+        assert_eq!(mark(&missing), 0);
     }
 
     #[test]
@@ -644,14 +796,15 @@ mod tests {
             ),
         )
         .expect("write evidence");
-        let found = outcome_for(&path, "https://a.test/").expect("row for the page");
+        let found = outcome_for(&path, "https://a.test/", 0).expect("row for the page");
         assert_eq!(found.kind, "checkbox");
         assert!(found.solved);
         assert_eq!(found.via.as_deref(), Some("field"));
         assert_eq!(found.contexts, 3);
-        let other = outcome_for(&path, "https://other.test/").expect("row for the other page");
+        let other =
+            outcome_for(&path, "https://other.test/", 0).expect("row for the other page");
         assert_eq!(other.kind, "none");
-        assert_eq!(outcome_for(&path, "https://absent.test/"), None);
+        assert_eq!(outcome_for(&path, "https://absent.test/", 0), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -670,7 +823,7 @@ mod tests {
             ),
         )
         .expect("write evidence");
-        let found = outcome_for(&path, "https://a.test/").expect("the intact row");
+        let found = outcome_for(&path, "https://a.test/", 0).expect("the intact row");
         assert_eq!(found.kind, "score");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -693,7 +846,7 @@ mod tests {
         for row in diagnostics {
             std::fs::write(&path, format!("{row}\n")).expect("write evidence");
             assert_eq!(
-                outcome_for(&path, "https://a.test/"),
+                outcome_for(&path, "https://a.test/", 0),
                 None,
                 "a diagnostic row was read as a verdict: {row}"
             );
@@ -708,13 +861,59 @@ mod tests {
             ),
         )
         .expect("write evidence");
-        let found = outcome_for(&path, "https://a.test/").expect("the verdict row");
+        let found = outcome_for(&path, "https://a.test/", 0).expect("the verdict row");
         assert!(found.solved);
         assert_eq!(found.kind, "slider");
         // A row with a kind but no verdict field is not a verdict either.
         std::fs::write(&path, "{\"kind\":\"slider\",\"url\":\"https://a.test/\"}\n")
             .expect("write evidence");
-        assert_eq!(outcome_for(&path, "https://a.test/"), None);
+        assert_eq!(outcome_for(&path, "https://a.test/", 0), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two visits to one url in one session write two rows with that url. Without
+    /// a mark the second navigation reads the first visit's verdict and reports a
+    /// page as solved while the engine is still clicking it, so a caller that
+    /// navigates twice is told about a solve that has not happened yet. The same
+    /// hole hides a failure: a visit that the engine refuses inherits the earlier
+    /// pass.
+    #[test]
+    fn a_verdict_from_an_earlier_visit_is_not_this_visits_verdict() {
+        let dir = std::env::temp_dir().join(format!("lurien-evidence-mark-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("evidence.jsonl");
+        let solved = r#"{"kind":"checkbox","vendor":"v","solved":true,"via":"field","ms":900,"url":"https://a.test/","contexts":2}"#;
+        std::fs::write(&path, format!("{{\"event\":\"taken\",\"url\":\"https://a.test/\"}}\n{solved}\n"))
+            .expect("write evidence");
+
+        // The first visit's own reader, marked before its own row existed, sees it.
+        assert!(outcome_for(&path, "https://a.test/", 0).is_some());
+        assert!(taken(&path, "https://a.test/", 0));
+
+        // A second navigation marks the file first, so the same rows are history.
+        let mark = mark(&path);
+        assert_eq!(outcome_for(&path, "https://a.test/", mark), None);
+        assert!(
+            !taken(&path, "https://a.test/", mark),
+            "an old taken row made the second visit look like a running solve"
+        );
+
+        // What the engine appends after the mark is this visit's, verdict or not.
+        let refused = r#"{"kind":"checkbox","vendor":"v","solved":false,"via":null,"ms":40,"url":"https://a.test/","contexts":2,"error":"refused"}"#;
+        std::fs::write(
+            &path,
+            format!("{{\"event\":\"taken\",\"url\":\"https://a.test/\"}}\n{solved}\n{{\"event\":\"taken\",\"url\":\"https://a.test/\"}}\n{refused}\n"),
+        )
+        .expect("append evidence");
+        assert!(taken(&path, "https://a.test/", mark));
+        let now = outcome_for(&path, "https://a.test/", mark).expect("this visit's row");
+        assert!(!now.solved, "the second visit inherited the first one's pass");
+        assert_eq!(now.error.as_deref(), Some("refused"));
+
+        // An evidence file replaced under the caller is read whole rather than
+        // skipped: a mark past the end means none of it is history.
+        std::fs::write(&path, format!("{solved}\n")).expect("shorter evidence");
+        assert!(outcome_for(&path, "https://a.test/", mark).is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -12,6 +12,12 @@
   element.click(), or a dispatchEvent all arrive with isTrusted false and are
   ignored, exactly as a vendor ignores them. So a written token proves the
   engine reached this context and dispatched through the real event path.
+
+  It also keeps the coordinates of every trusted move, which is what a scoring
+  vendor keeps. `window.lurienApproach()` returns what this document saw, which is
+  a sample of the motion and not the motion itself: the event path coalesces
+  mousemove, so two dispatches of one curve are observed as two different point
+  lists. It proves the pointer moved here, in this document's coordinates.
 -->
 <style>
   body { font: 13px system-ui; margin: 0; padding: 12px; }
@@ -34,11 +40,21 @@
   let downTrusted = false;
   let moves = 0;
 
+  const path = [];
+
   addEventListener("mousemove", event => {
-    if (event.isTrusted) {
-      moves += 1;
+    if (!event.isTrusted) {
+      return;
     }
+    moves += 1;
+    const rect = box.getBoundingClientRect();
+    path.push([
+      Math.round((event.clientX - rect.left) * 10) / 10,
+      Math.round((event.clientY - rect.top) * 10) / 10,
+    ]);
   });
+
+  window.lurienApproach = () => JSON.stringify(path);
 
   box.addEventListener("mousedown", event => {
     downTrusted = event.isTrusted;

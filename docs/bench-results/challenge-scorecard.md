@@ -97,3 +97,22 @@ The `prelude` fixture rules out a solve that clicks a page nobody read:
   requires no token. Measured on 2026-08-17 against engine 150.0.2-beta.25: 14
   moves and 6 wheel events cleared the widget in 8.6 s, and the unread run was
   refused.
+
+The `dynamics` fixture rules out one curve replayed for every interaction:
+
+- The widget is solved twice in one session. Each verdict row names the deck entry
+  the interaction took, and two entries in one session must differ; the engine
+  never deals the same entry twice in a row.
+- A third and fourth solve run under the same `LURIEN_DYNAMICS_SEED` and must deal
+  the same two entries in the same order, so the motion of a scored solve can be
+  reproduced.
+- The widget records every trusted move in its own coordinates and refuses a click
+  that arrived with fewer than three, so each visit is a real approach through the
+  event path. The record is a sample, not the dispatched curve: `mousemove` is
+  coalesced, which is why the dealt entry is what the test compares.
+- Measured on 2026-08-17 against engine 150.0.2-beta.25: entries 6 then 4, replayed
+  as 6 then 4, four token writes, 24 trusted moves recorded per visit.
+- Three mutations were checked. A constant deck index made both solves in a session
+  take entry 0 and the test red; an unseeded (`Math.random`) order broke the replay
+  and the test red; shipping one `trajectory` instead of a deck left every row with
+  no entry to name and the test red.
