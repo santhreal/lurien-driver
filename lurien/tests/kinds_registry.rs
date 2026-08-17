@@ -642,3 +642,39 @@ fn every_token_channel_a_binding_names_is_one_the_engine_reads() {
     }
     assert!(checked > 0, "no vendor binding carries a token table");
 }
+
+/// `docs/KINDS.md` tells the next person which test reddens at each step of adding
+/// a kind. A name that no longer exists sends them looking for a law that is gone,
+/// which is worse than no instruction: they conclude the step is unenforced.
+#[test]
+fn every_test_the_kind_guide_names_is_a_test_in_this_tree() {
+    let guide = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/KINDS.md");
+    let raw = fs::read_to_string(&guide).expect("docs/KINDS.md");
+    let sources = ["tests/kinds_registry.rs", "tests/engine_package.rs", "src/challenge.rs"]
+        .iter()
+        .map(|name| {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(name);
+            fs::read_to_string(&path).unwrap_or_else(|_| panic!("{}", path.display()))
+        })
+        .collect::<Vec<_>>();
+
+    let mut cited = 0;
+    for word in raw.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == ':')) {
+        // A citation is `file.rs::test_name`, or a bare name in a row that already
+        // named its file, which is how the second name in a pair is written.
+        let name = word.rsplit("::").next().unwrap_or_default();
+        if name.len() < 12 || !name.starts_with("every_") && !name.starts_with("the_") && !name.starts_with("a_") {
+            continue;
+        }
+        cited += 1;
+        let declaration = format!("fn {name}(");
+        assert!(
+            sources.iter().any(|source| source.contains(&declaration)),
+            "docs/KINDS.md names the test {name}, which no longer exists"
+        );
+    }
+    assert!(
+        cited >= 8,
+        "only {cited} tests are named in the guide, so it stopped saying what enforces a step"
+    );
+}

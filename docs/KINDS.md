@@ -50,15 +50,33 @@ Do not add a C++ file. A vendor identifier under `engine/additions/challenge/` i
 
 ## Add a kind
 
-1. Add the name to `captcha/kinds/_schema.toml`.
-2. Implement the primitive once (`Input` / `Snapshot` / `HelperSock` / `Pow`).
-3. One fixture that fails until the kind is wired, and which refuses the shape a
-   scripted solver produces rather than only checking the answer.
-4. One `lurien/tests/e2e_<kind>.sh` that drives that fixture through `goto` and
-   reads the verdict out of the evidence file, with at least one phase that must be
-   refused. A claim proven only by a page somebody visited is not replayable and is
-   refused by `kinds_registry.rs`.
-5. A dated scorecard row before the build claims the kind, naming that script, and a
-   live-vendor row before a document names a vendor for it.
+Nine places, in this order. Each one has a test that turns red while it is missing,
+which is the reason the list is worth following rather than remembering.
 
-The registry test enumerates `_schema.toml` at run time.
+| Step | Where | Red without it |
+|---|---|---|
+| 1. Name the kind | `captcha/kinds/_schema.toml` | nothing yet: the schema is the source every later law reads |
+| 2. Place it in the order that gates a page | `KIND_SEVERITY` in `engine/additions/challenge/Kinds.sys.mjs` | `engine_package.rs::every_kind_has_a_place_in_the_order_that_gates_a_page` |
+| 3. Implement the primitive once | `Input`, `Snapshot`, `HelperSock` or `Pow` in `engine/additions/challenge/` | its own fixture, step 5 |
+| 4. Bind a vendor to it | `captcha/kinds/<vendor>.toml` | `kinds_registry.rs::every_vendor_toml_names_a_closed_kind` and `every_interactive_kind_has_at_least_one_vendor_binding` |
+| 5. One fixture | `captcha/kinds/fixtures/<kind>.html` | `kinds_registry.rs::every_closed_kind_has_a_fixture` |
+| 6. One runnable proof | `lurien/tests/e2e_<kind>.sh` | `kinds_registry.rs::every_claimed_kind_names_a_proof_that_can_be_run_again` |
+| 7. A dated scorecard row | `docs/bench-results/challenge-scorecard.md` | `kinds_registry.rs::every_claimed_kind_has_a_dated_scorecard_row` and `every_claim_names_the_build_that_proved_it` |
+| 8. Claim it | `CLAIMED_KINDS` in `lurien/src/challenge.rs` | `challenge.rs::every_claimed_kind_is_a_kind_the_catalog_can_present`; until this step the engine refuses the kind with a typed error instead of acting |
+| 9. Give it a budget | `KIND_BUDGET_MS` in `lurien/src/challenge.rs` | `challenge.rs::a_page_is_watched_for_as_long_as_the_engine_was_given`; a kind with no row of its own is bounded by the page budget |
+
+Two things the fixture has to do, because a fixture is the only thing standing
+between a claim and a page nobody tested:
+
+- Fail until the kind is wired, and refuse the shape a scripted solver produces
+  rather than only checking the answer. A widget that accepts an untrusted click is
+  not evidence about a solver that dispatches one.
+- Be reachable from a script in `lurien/tests/` with at least one phase that must be
+  refused. A claim proven only by a page somebody once visited is not replayable.
+
+A live-vendor row is required before any document names a vendor for the kind. It
+never replaces the fixture row: a vendor can change overnight, and the fixture is
+what says whether the mechanism still works.
+
+The registry test enumerates `_schema.toml` at run time, so a kind added there and
+nowhere else turns the suite red at step 2 rather than shipping half-wired.
