@@ -1,22 +1,21 @@
 # Lurien product spec
 
-One installable browser. The word is **lurien** everywhere a human types it.
-The browser itself is **lurien-browser**; the Rust crate that drives it is
-**lurien-driver**. The browser owns the browser name.
+One installable browser, one driver, one registry of verbs behind every face.
 
-There is no public or internal product named reynard after cutover.
-guise, foxdriver, guise-bridge, and captchaforge stop being products.
-guise crate *names* stay (`guise`, `guise-profiles`, `guise-pacing`, `guise-choice`, `guise-oracle`). Every guise crate *path* moves into `software/browser/`. `libs/runtime/` holds none of them after cutover.
+The word is **lurien** everywhere a human types it. The browser is
+**lurien-browser**, a Gecko fork under MPL-2.0 in its own repository. The Rust
+crate that drives it is **lurien-driver**, and it exposes a CLI (`lurien`), an
+MCP server (`lurien-mcp`), an HTTP face (`lurien serve`), and a library.
 
-This file is the plan.
-Do not create `santhreal/reynard`, do not ship `REYNARD_*`, do not leave `software/reynard/` as a path.
+A crate that cannot paint a page is not the browser. `lurien-driver` requires an
+installed `lurien-browser` and says so when it is missing.
 
-## 0. Shipped, 2026-08-16
+## 0. Shipped
 
 | Item | State |
 |---|---|
 | `santhreal/lurien-driver` | the control tree: driver crate, persona crates, catalog, docs |
-| `santhreal/lurien-browser` | the Gecko fork, renamed off `reynard` |
+| `santhreal/lurien-browser` | the Gecko fork |
 | crates.io `guise` family | unified at `0.1.8` |
 | crates.io `captchaforge` | 36 versions yanked; `0.2.41` stays as the retirement notice |
 | challenge subsystem | `engine/additions/challenge/`, packaged, proven by `lurien/tests/e2e_challenge.sh` |
@@ -36,841 +35,448 @@ Do not create `santhreal/reynard`, do not ship `REYNARD_*`, do not leave `softwa
 | selectors and the wait | `role:`/`text:`/`label:`/`placeholder:`/`testid:` or CSS, one resolver, acts wait for their element, ambiguity is refused with candidates, proven by `lurien/tests/e2e_locator.sh` |
 | the agent's page | `snapshot` answers with roles, names and handles; `ref:eN` acts, and a handle whose node changed is refused, proven by `lurien/tests/e2e_snapshot.sh` |
 | one call, several verbs | `batch` runs a step list, validates it before running any of it, stops at the first failure and says how far it got, on all three faces, proven by `lurien/tests/e2e_batch.sh` |
+| the environment the page reads | geolocation, wall clock, permissions and locale are set over the engine control channel, not by page script, proven by `lurien/tests/e2e_geo.sh` and `lurien/tests/e2e_clock.sh` |
+| the network view | routes are applied on the channel in the parent, and one redaction rule serves the log, the HAR and the route view, proven by `lurien/tests/e2e_route.sh` and `lurien/tests/e2e_har.sh` |
+| a handle that means one context | a frame handle is minted once per browsing context and refused when the context is gone, proven by `lurien/tests/e2e_frames.sh` |
 
 `lurien-driver` is not published while `visual` and `audio` are still refused.
 
-## 1. Name
+## 1. Names
 
 | Face | Token |
 |---|---|
-| Spoken / CLI / MCP | `lurien`, `lurien-mcp` |
-| The browser | `lurien-browser`, GitHub `santhreal/lurien-browser`, MPL, own repo |
+| Spoken, CLI, MCP | `lurien`, `lurien-mcp` |
+| The browser | `lurien-browser`, GitHub `santhreal/lurien-browser`, MPL-2.0, own repository |
 | The driver | `lurien-driver`, GitHub `santhreal/lurien-driver`, crates.io `lurien-driver` |
-| Installed browser binary | `lurien` |
-| crates.io `lurien` | a dead 2021 config-file crate, not us, not available |
-| crates.io `lurien-browser` | held for the crate that installs the browser, if that is ever built |
-| npm (later) | `@santhreal/lurien-mcp` |
-| Browser env | `LURIEN_BIN`, `LURIEN_CONFIG`, `LURIEN_CHALLENGE` |
+| Installed browser binary | `~/.local/share/lurien/lurien` |
 | Persona crates | `guise`, `guise-profiles`, `guise-pacing`, `guise-choice`, `guise-oracle` |
+| Driver internals | `runtime-foxdriver`, `lurien-vision`, `guise-echo` |
+| Browser environment | `LURIEN_BIN`, `LURIEN_CONFIG`, `LURIEN_CHALLENGE`, `LURIEN_CONTROL` |
 
-A crate that cannot paint a page is not the browser. `lurien-driver` requires an
-installed `lurien-browser` and says so when it is missing.
+Names that are not available and not us:
 
-Do not publish `santhreal/reynard`, `reynard.dev`, `reynard-mcp`, or a Playwright Python package.
-[minh-ton/reynard-browser](https://github.com/minh-ton/reynard-browser) is a 1.5k-star Gecko iOS browser.
+- crates.io `lurien` is a dead 2021 config-file crate.
+- crates.io `guise` is the persona library, not a browser.
+- `reynard-browser` on GitHub is an unrelated Gecko iOS browser.
 
-Do not publish a crate named `guise` as the browser. [santhreal/guise](https://github.com/santhreal/guise) is the persona lib (32k downloads).
-
-Do not print `lurien.dev` until the domain is owned. Install URL is GitHub raw or `santh.dev`.
+Do not print `lurien.dev` until the domain is owned. The install URL is GitHub
+raw or `santh.dev`.
 
 ## 2. Goal
 
-A coding-agent user who already drives Playwright can install lurien, then either keep their Playwright script (launch uses the lurien-installed engine) or add:
+Someone who already drives Playwright installs lurien and either keeps their
+script, pointing `executablePath` at the installed browser, or adds:
 
 ```json
 { "mcpServers": { "playwright": { "command": "lurien-mcp" } } }
 ```
 
-Same tool names as `@playwright/mcp`. The MCP description is the only skill.
-Captchas that are really scores (managed Cloudflare) pass because the persona holds.
-Hard captchas are solved inside the engine, not by a sidecar crate.
+The MCP tool names match `@playwright/mcp`, and the tool description is the only
+skill. Captchas that are really scores pass because the persona holds. Kinds
+that need an act are solved inside the browser, not by a sidecar crate and never
+by a third-party HTTP solver.
 
-v1 does **not** claim “solves all captchas.” It claims: Playwright drop-in, no debug strip, import a real Firefox profile, managed CF holds, `lurien_gate` green on a real Linux host.
+## 3. Tree and licence
 
-## 3. Organization
+`docs/TREE.md` owns the directory layout, every folder's owner, and the import
+law. It is the file to read before adding a crate or a module, and it is
+enforced by `lurien/tests/verb_registry.rs` and the `import-law` CI job rather
+than by prose here.
 
-```
-PUBLIC     lurien              CLI, MCP, installed engine binary
-           lurien-browser      crates.io + GitHub
-INTERNAL   guise + guise-*     persona crates, under software/browser/
-           foxdriver           BiDi Page (Rust, ours)
-           serve               HTTP face. Died into `lurien serve`; no separate daemon
-DEAD       captchaforge        yank after shim
-           reynard             every token, path, env, test, script
-```
+The layering that does not change:
 
-```
-software/browser/
-  README.md
-  install.sh
+- The browser is a separate process under MPL-2.0. libxul is never linked into
+  the MIT crate.
+- `lurien-driver` may depend on `guise` and `runtime-foxdriver`. Nothing else in
+  its graph is allowed.
+- `guise` without the `browser` feature does not pull the driver, so a scanner
+  that wants headers does not build a browser stack.
+- A vendor name appears in `captcha/kinds/*.toml` and nowhere else. The modules
+  under `engine/additions/challenge/` implement kinds.
+- Helpers speak the helper protocol over a socket. They never import the driver
+  and never see the page.
 
-  lurien/                         crate lurien-driver. The only public Rust face.
-    Cargo.toml                    [[bin]] lurien, lurien-mcp
-    src/
-      lib.rs                      lurien::Browser
-      launch.rs                   coherence → resolve → spawn → BiDi poll → Page
-      resolve.rs                  LURIEN_BIN → Result. No Firefox fallback
-      profile_import.rs           cookies.sqlite, logins.json+key4.db, storage
-      goto.rs                     navigate + Challenge wait + named fail
-      as_profile.rs               `as` — switch/import a real Firefox profile
-      version.rs                  crate semver + engine --version
-      error.rs                    every §6.2 failure is a typed variant
-    bins/
-      lurien.rs                   Playwright verbs + as
-      lurien-mcp.rs               stdio, Playwright-MCP names, no `challenge` tool
-    tests/
-      resolve.rs                  missing bin → Err (mutation: Option fallback)
-      error_registry.rs           every launcher hits resolve()
+The public crate is MIT OR Apache-2.0. Modules under
+`engine/additions/challenge/` are MPL-2.0 with the rest of the fork. Kind TOML
+is MIT: a new vendor is data, not a patch.
 
-  engine/                         today's software/reynard/          MPL-2.0
-    patches/
-      banner-no-visual-cue.patch  skip gRemoteControl.updateVisualCue
-      lurien-config.patch         MaskConfig reads LURIEN_CONFIG first
-      challenge-register.patch    register the observer + load the catalog
-    additions/challenge/          primitives. No vendor names in C++.
-      Observer.{h,cpp}            attach nsIWebProgressListener to every BC
-      Catalog.{h,cpp}             load kinds/*.toml; fail closed on unknown kind
-      Classify.{h,cpp}            chrome signals → (kind, target, token spec)
-      Input.{h,cpp}               trusted pointer / key / drag on a named BC
-      Token.{h,cpp}               watch hidden-input / postMessage / cookie write
-      Snapshot.{h,cpp}            compositor grab of a named BC
-      HelperSock.{h,cpp}          local socket to the vision and audio helpers
-    settings/                     camoufox.cfg → lurien.cfg
-    scripts/                      make / package / install-local-build
-    pythonlib/                    upstream Camoufox tests. Not a product
-    tests/                        camoufox Playwright suite. Keep
+## 4. Public surface
 
-  guise/                          persona compiler + launch
-    src/
-      browser/
-        lurien.rs                 today's reynard.rs (resolve, config JSON, spawn)
-        inject.rs                 JS stealth. Stock-Firefox path only
-        userjs.rs                 prefs
-        session_age.rs
-        mod.rs                    launch orchestration + family gate
-      fingerprint/                identity, TLS/JA3/JA4, WebGL, fonts, bundle
-      human/                      mouse, keystroke, scroll, timing (single owner)
-      http/                       headers, wire_emit, session_coherence
-      probe/                      oracle + catalogue (gates, not product)
-      persona_pool.rs rotation.rs config.rs
-  guise-profiles/                 UA / profile ids
-  guise-pacing/                   backoff / jitter
-  guise-choice/                   sampling
-  guise-oracle/                   surface taxonomy
-
-  foxdriver/                      BiDi Page. Do not fold into guise.
-    src/
-      lib.rs
-      browser.rs                  launch, Page, frames, performActions
-      network.rs                  request / cookie / auth
-      frame.rs frame_graph.rs     OOPIF tree
-      cookies.rs dialog.rs sensors.rs
-
-                                  (the HTTP daemon is now `lurien serve`)
-  echo/                           guise-echo. Test reflector only
-
-  captcha/                        catalog + helpers. Not a product.
-    kinds/                        one TOML per vendor binding
-      _schema.toml                closed kind enum + required fields
-      turnstile.toml              signals → kind=score|checkbox, token field
-      recaptcha.toml
-      hcaptcha.toml
-      arkose.toml                 kind=visual (or new kind + fixture, not C++)
-      geetest.toml
-      datadome.toml
-      akamai.toml
-      integrity.toml              always-block sitekeys
-    vision/                       lurien-vision: slider measurement now, grid classification later. Not in libxul
-    audio/                        helper process. STT
-
-  docs/
-    README.md                     what it is, install, honest leaks
-    ENGINE.md                     build, rebase, add a patch
-    KINDS.md                      add a vendor / add a kind
-    TREE.md                       every folder's owner, allowed imports
-    REBASE.md                     Camoufox/Firefox rebase runbook
-    NOTICE                        MPL + Camoufox + Firefox
-
-libs/runtime/                     no guise*, no foxdriver, no echo
+```rust
+lurien::Browser::launch(profile) -> Browser   // resolve, spawn, BiDi, Page
+browser.session().call(verb, args) -> Output  // the only way a verb runs
 ```
 
-Do not fold foxdriver into guise.
-Do not put ONNX / VLM / Whisper in Gecko. Vision is a helper process.
-Do not put a vendor name in `engine/additions/challenge/`.
-Scanner path deps follow `software/browser/guise-*`. Crate names stay.
+Sixty-four verbs across thirteen domains (`state`, `net`, `storage`, `input`,
+`profile`, `context`, `intercept`, `observe`, `dialog`, `dom`, `page`, `frame`,
+`session`). `docs/VERBS.md` is generated from the registry and a test fails when
+it is stale, so that file is the reference and this one does not repeat it.
 
-Public crate license: MIT OR Apache-2.0.
-Engine: MPL-2.0, separate process. Never link libxul into the MIT crate.
-Observer primitives under `engine/additions/challenge/` are MPL. Accepted.
-Kind TOML is MIT. A new vendor is a TOML, not a patch.
+One `VerbSpec` per verb declares its name, its arguments, their types and
+whether each is required. Every face reads the same specs: the CLI parses into
+them, the MCP server derives its JSON Schema from them, and `lurien serve`
+routes into them. A face that imported a verb module directly would fail a
+registry law.
 
-## 4. Complete rename
-
-Every `reynard` token becomes `lurien`. No leftover path, env, symbol, or test name after cutover.
-
-### 4.1 Engine tree
-
-| Today | After |
-|---|---|
-| `software/reynard/` | `software/browser/engine/` |
-| `software/reynard/REYNARD.md` | fold into `software/browser/README.md` + `ENGINE.md` (fork notes only) |
-| `software/reynard/scripts/publish-reynard.sh` | `software/browser/scripts/publish-engine.sh` |
-| `software/reynard/pythonlib/` | stays under `engine/pythonlib/` as Camoufox test/tooling. Not a lurien product |
-| aboutDialog / branding `camoufox` | lurien (v1 can keep Camoufox chrome strings if a patch is not ready; installed name is still `lurien`) |
-| build product `camoufox` in `obj-*/dist/bin/` | `install.sh` copies/symlinks it to `lurien`. Native binary rename is a later branding patch |
-
-Do not create `santhreal/reynard`.
-
-### 4.2 Env and install paths
-
-| Today | After |
-|---|---|
-| `REYNARD_BIN` | `LURIEN_BIN` |
-| `GUISE_REYNARD_BIN` | `LURIEN_BIN` (one name) |
-| `REYNARD_CONFIG` / `REYNARD_CONFIG_N` | `LURIEN_CONFIG` / `LURIEN_CONFIG_N` |
-| `~/.local/share/reynard/reynard` | `~/.local/share/lurien/lurien` |
-| `~/.cache/reynard/reynard` | `~/.cache/lurien/lurien` |
-| `/opt/reynard/reynard` | `/opt/lurien/lurien` |
-| `scripts/install-reynard.sh` | `software/browser/install.sh` |
-| `$REYNARD_STAGING` | `$LURIEN_STAGING` (a host path the caller supplies; never hardcoded in the product) |
-
-`MaskConfig.hpp` read order after the patch:
-
-1. `LURIEN_CONFIG[_<n>]`
-2. `REYNARD_CONFIG[_<n>]` (one release, then delete)
-3. `CAMOU_CONFIG[_<n>]` (upstream Camoufox; keep)
-
-Resolver (`resolve_lurien_bin`) after cutover:
-
-1. `LURIEN_BIN`
-2. `REYNARD_BIN` / `GUISE_REYNARD_BIN` (one release, then delete)
-3. `~/.local/share/lurien/lurien`, `~/.cache/lurien/lurien`, `/opt/lurien/lurien`
-4. old `~/.local/share/reynard/reynard` (one release, then delete)
-
-Missing binary is `Err`. Never stock Firefox. The current `Option` + loud warning is the bug v1 closes.
-
-### 4.3 Rust symbols
-
-| Today | After |
-|---|---|
-| `guise/src/browser/reynard.rs` | `guise/src/browser/lurien.rs` (or `engine.rs`) |
-| `REYNARD_CONFIG_ENV` | `LURIEN_CONFIG_ENV` |
-| `reynard_config` / `reynard_config_env` | `lurien_config` / `lurien_config_env` |
-| `resolve_reynard_bin` | `resolve_lurien_bin` → `Result<PathBuf, Error>` |
-| `launch_reynard` / `launch_reynard_with_config` | public `lurien::Browser::launch`; internal `launch_with_config` |
-| `firefox_engine_major` | keep (describes Gecko, not the brand) |
-| `tests/reynard_gate.rs` | `tests/lurien_gate.rs` (`[[test]] name = "lurien_gate"`) |
-| `tests/reynard_mouse_model_ownership.rs` | `tests/lurien_mouse_model_ownership.rs` |
-| `tests/reynard_canvas_audio_farble_live.rs` | `tests/lurien_canvas_audio_farble_live.rs` |
-| `tests/reynard_window_geometry*` | `tests/lurien_window_geometry*` |
-| `e2e_reynard_bridge.sh` | `e2e_lurien_bridge.sh` |
-| health `browser_engine == "reynard"` | `"lurien"` |
-| rustenium timeout comment “Camoufox/reynard” | “lurien” |
-
-`launch_profiled_firefox` and `foxdriver::drive_browser` stay test-only (stock-vs-lurien oracle). Not on the public path.
-
-### 4.4 Docs and plans
-
-| Today | After |
-|---|---|
-| `software/browser/README.md` | product face (this folder) |
-| guise CHANGELOG historical “reynard” | leave (history). New text says lurien |
-| MASTER_PLAN `02_stealth.md` / `02_guise.md` | leave. CLAIMS.md marks DONE |
-
-After cutover, grep of `software/browser/` for `\breynard\b` and `REYNARD_` must be empty except the one-release alias table and `CAMOU_CONFIG` comments. Grep of `libs/runtime/` for `guise` / `foxdriver` / `guise-echo` must be empty.
-
-## 5. Public API
-
-```
-lurien::Browser::launch(profile) -> Page
-```
-
-Engine binary required. Missing binary is an error.
-
-MCP / CLI verbs = Playwright-MCP: `goto snapshot click type fill screenshot cookies url scroll wait frames`. Plus `as` (import/switch profile). Captcha is automatic. No `challenge` tool.
-
-Node v1 is `firefox.launch({ executablePath })`. No Node package unless we decide later.
-npm MCP is later. v1 is a binary on PATH.
+Argument names are lower snake case. Schemas set `additionalProperties: false`.
+Required arguments precede optional ones, and an argument is never both required
+and defaulted.
 
 Default is headful. Headless is a documented weaker mode, not the demo.
 
-v1 OS: Linux x86_64 only. macOS / Windows / aarch64 are not v1.
+v1 is Linux x86_64 only.
 
-## 6. Launch contract
+## 5. Launch contract
 
-This is the product. Every path a user or agent hits must fail loud with a next action.
-
-### 6.1 Success
+### 5.1 What a launch does
 
 ```
 install.sh
-  → ~/.local/share/lurien/lurien exists and is executable
-  → lurien --version prints the Gecko/Camoufox version
-lurien::Browser::launch(profile)
-  → resolve LURIEN_BIN
-  → enforce persona coherence (same primitive as today)
-  → Firefox-family gate (refuse Chrome/Safari persona)
-  → align UA major to engine --version
-  → write LURIEN_CONFIG + wrapper script in a unique temp dir
-  → spawn, poll BiDi port until accept (no fixed sleep)
-  → apply session-age seed
-  → return Page
+  -> ~/.local/share/lurien/lurien exists and is executable
+  -> lurien --version prints the crate version and the Gecko version
+Browser::launch(profile)
+  -> resolve the engine binary
+  -> enforce persona coherence
+  -> refuse a non-Firefox persona
+  -> align the UA major to the engine version
+  -> write LURIEN_CONFIG, LURIEN_CHALLENGE and LURIEN_CONTROL into a unique temp dir
+  -> spawn, then ask session.status until the browser answers
+  -> apply the session-age seed
+  -> return a Browser
 goto url
-  → NSS handshake (real Firefox)
-  → Catalog.classify: none | score | checkbox | visual | slider | audio | pow | fail
-  → document usable. No auto_solve. No challenge tool.
+  -> real NSS handshake
+  -> the subsystem must have appended its started row
+  -> classify: none, score, checkbox, slider, pow, or a refusal
+  -> document usable
 ```
 
-Concurrent launches get unique temp dirs (already true). Keep that.
+Readiness is a command answered, not a port bound. A dead attach is a relaunch,
+never a reconnect, and there are three launch attempts before the error.
 
-### 6.2 Failures (v1 must name each)
+Concurrent launches get unique temp directories.
 
-| Failure | Behavior |
+### 5.2 Failures
+
+Every failure is a typed variant in `lurien/src/error.rs`, and every variant's
+message names the corrective action. `every_error_shows_what_it_captured` holds
+that: a variant with no captured detail, or with no next action, is red.
+
+| Class | What the caller is told |
 |---|---|
-| No `LURIEN_BIN` and no install path | Error: “lurien engine not installed. Run install.sh or set LURIEN_BIN.” Never spawn `/usr/bin/firefox`. |
-| Binary not executable / not a Firefox | Error with path and `file(1)` hint. |
-| `DISPLAY` unset and headful | Error: “headful lurien needs DISPLAY. Start Xvfb or export DISPLAY. Headless is weaker; pass headless=true only if you accept that.” |
-| BiDi port never accepts | Error after bounded poll (not rustenium’s 500 ms race). Include elapsed + last errno. |
-| rustenium `session.new` timeout | Keep the raised timeout for cold lurien. Error names the timeout and how to raise it. |
-| Persona incoherent | Error from `enforce_persona_launch_coherence`. No launch. |
-| Non-Firefox persona | Error from the engine-family gate. |
-| Cross-OS persona on Linux (Windows/macOS fonts/WebGL) | Error or hard warning that blocks v1 default. Do not silently ship a lying canvas. |
-| Proxy configured but unreachable | Error on first connect. Do not fall back to direct (host TTL leak). |
-| No proxy (proxyless) | Launch allowed. README + launch log: host TCP/TTL still Linux. Not a silent claim of “any geo.” |
-| Profile dir locked (another Firefox) | Error: path + “close the other Firefox or pick a new profile_dir.” |
-| Profile import: missing `logins.json` / `key4.db` | Import cookies + localStorage; warn that logins were skipped. Do not invent passwords. |
-| Profile import: corrupt `cookies.sqlite` | Error. Do not start with a half-copied profile. |
-| Remote-control banner still painted | v1 gate fail. Banner patch is required. |
-| `navigator.webdriver === true` | v1 gate fail. |
-| Managed CF / Turnstile score-class fails | Fail the `goto`. Do not retry with a different persona unless the caller asked. |
-| Kind the build does not claim | Refuse with the kind name and the reason: not claimed by this build. Never report it as a pass, never call a third-party solver. Claimed kinds are the ones with a dated scorecard row: `none`, `score`, `checkbox`. |
-| Crash / SIGSEGV of the engine | Error with the wrapper log path. Do not restart in a loop. |
-| OOM | Error. Publish the idle RSS number so this is diagnosable. |
-| MCP client sends `challenge` | Unknown tool. Description already says captcha is automatic. |
-| `lurien-mcp` started with no engine | Same missing-binary error on stdio, then exit 1. |
+| `EngineMissing` | the browser is not installed; run install.sh or set `LURIEN_BIN` |
+| `EngineNotExecutable`, `NotFirefox` | the path, and how to fix or repoint it |
+| `DisplayUnset` | headful needs a display; headless is weaker and must be asked for |
+| `BidiTimeout`, `SessionTimeout` | the elapsed time, the last error, and the timeout to raise |
+| `PersonaIncoherent`, `NonFirefoxPersona`, `CrossOsPersona` | the field that does not hold, and the stock persona that does |
+| `ProxyUnreachable` | the proxy URL and the connect error. There is no fall back to direct |
+| `ProfileLocked`, `CookiesCorrupt`, `LoginsSkipped` | the path, and whether the import continued without it |
+| `ChallengeNotStarted` | the browser never started its solver, so a clean page cannot be told from a blind one |
+| `HardCaptcha` | the kind this build does not claim, by name. Never a pass, never a third-party call |
+| `ScoreFailed` | the classification or the token wait that ran out, and the budget it was given |
+| `EvidenceVersion` | the version the row carried and the version this build reads |
+| `GeolocationUnavailable`, `ControlUnavailable` | which control call failed, on which port, and why |
+| `DownloadDirUnusable`, `DownloadFailed` | the directory or the file, and what happened instead |
+| `Unresolved` | the selector as written, how long it waited, and the candidates when it was ambiguous |
+| `BadArgs`, `UnknownVerb`, `UnknownMcpTool` | the verb or tool, what was wrong, and where the registry is |
+| `BatchFailed` | the step index, the verb, how far it got, and how many steps did not run |
+| `EngineCrash` | the wrapper log path. There is no restart loop |
 
-Tests that cannot see a display or binary **skip-loud** (print why, exit 0). The **product** never skips.
+Tests that cannot see a display or a browser skip loud: they print why and exit
+0. The product never skips.
 
-### 6.3 What stays hidden
+### 5.3 What stays hidden
 
-Stock Firefox launch and `foxdriver::drive_browser` exist only for `lurien_gate` (patched vs stock).
-A user of `lurien` never hits them.
+A stock Firefox launch and the raw BiDi driver exist for the patched-versus-stock
+oracle. `STOCK_FIREFOX_BIN` names the staged build on a developer host. It is
+not a product fallback and a user of `lurien` never reaches it.
 
-## 7. Install
+## 6. Install
+
+### 6.1 What install.sh does
 
 ```
-curl -fsSL https://santh.dev/lurien/install.sh | sh
-# or
-software/browser/install.sh [/path/to/built/camoufox]
+software/browser/install.sh [/path/to/built/browser]
 ```
 
-`install.sh` does:
+1. Refuse anything but Linux x86_64.
+2. Resolve a built browser: the argument, else `LURIEN_BIN`, else the newest
+   `camoufox-*/obj-*/dist/bin/camoufox` under the engine tree or `LURIEN_STAGING`.
+3. Symlink it to `~/.local/share/lurien/lurien`.
+4. Put `lurien` and `lurien-mcp` on the path under `~/.local/bin`.
+5. Print `lurien --version`.
+6. Find nothing, and exit 1 with the build recipe.
 
-1. Resolve a built engine (`$1`, else `LURIEN_BIN`, else newest `software/browser/engine` / staging `camoufox-*/obj-*/dist/bin/camoufox`).
-2. `mkdir -p ~/.local/share/lurien` and symlink/copy to `~/.local/share/lurien/lurien`.
-3. Put `lurien` and `lurien-mcp` on PATH (`~/.local/bin`).
-4. Print `lurien --version`.
-5. If nothing found: exit 1 with how to build (`make dir && make build` in `engine/`) or where to set `LURIEN_BIN`.
+There is no hosted browser tarball. `curl | sh` that claimed to fetch Gecko
+would be a lie until a release asset exists, so install.sh wires a local build
+and says so.
 
-v1 does not download a multi-GB nightly from a CDN unless we actually host one. If we do not host one, install.sh is “wire a local build” and the README says so. Do not pretend `curl | sh` fetches an engine we have not published.
+Fonts under `engine/bundle/fonts/` are not shipped. A matched-host Linux persona
+does not need them, and cross-OS personas are unsupported.
 
-Playwright (Python or Node) uses `executablePath` / `firefox.launch({ executablePath })` pointed at `~/.local/share/lurien/lurien`. No `pip install`, no `from lurien.sync_api`. That is Camoufox’s product, not ours.
+### 6.2 Names still honoured
 
-## 8. Faces
+The installed browser reads the older names, so the driver and install.sh still
+accept them for one release. This is a live decision, not a leftover.
 
-- `lurien` CLI — Playwright verbs + `as`
-- `lurien-mcp` — stdio, Playwright-MCP tool names, long description is the skill
-- Rust: `lurien::Browser::launch` via crate `lurien-browser`
-- Any Playwright language: `executablePath` to the installed engine
+| Read | Also accepted |
+|---|---|
+| `LURIEN_BIN` | `REYNARD_BIN`, `GUISE_REYNARD_BIN` |
+| `LURIEN_CONFIG[_n]` | `REYNARD_CONFIG[_n]`, then `CAMOU_CONFIG[_n]` |
+| `~/.local/share/lurien/lurien` | `~/.cache/lurien/lurien`, `/opt/lurien/lurien` |
 
-Ahura keeps `AHURA_GUISE_BRIDGE_URL` for one release, then talks to `lurien-mcp` like any other agent. Hunt tools stay in Ahura.
+`CAMOU_CONFIG` stays as the upstream read of last resort. The fork still
+self-reports its upstream branding in the about dialog; the installed binary is
+named `lurien` and the branding patch is not written yet.
 
-## 9. The solver (this is the product)
+## 7. Faces
 
-captchaforge is a **page sidecar**. It `evaluate`s detect JS, guesses the
-Turnstile checkbox at parent-rect + (28, 32), clicks through BiDi, polls a
-hidden input. That is CapSolver with extra steps. Cloudflare's widget is a
-cross-origin OOPIF. Page JS cannot see it. Hardcoded offsets rot. The 3x…FF
-test key is a dead Firefox oracle (no Firefox builds that iframe). Third-party
-HTTP solvers (2captcha / CapSolver) leak the session and the timing.
+- `lurien` on the command line. Verbs and their arguments come from the registry.
+- `lurien-mcp` over stdio. Playwright-MCP tool names. There is no `challenge`
+  tool, because a captcha is a property of `goto`.
+- `lurien serve`, one HTTP process, no separate daemon and no verb passthrough on
+  the command line. Sessions have an idle deadline and report their own
+  telemetry.
+- Rust, through `lurien::Browser`.
+- Any Playwright language, through `executablePath`.
 
-The best solver is the browser that paints the widget.
+There is no PyPI package, no npm package and no Node package. Playwright talks to
+the binary.
 
-### 9.1 Why in-Gecko wins
+## 8. The solver
 
-| Path | What it can see | What it can click | Tell |
+### 8.1 Why the browser is the solver
+
+A page sidecar evaluates detect JS, guesses a widget offset inside a
+cross-origin frame, clicks through the driver and polls a hidden input. Page JS
+cannot see that frame, hardcoded offsets rot, and a third-party HTTP solver
+leaks the session and the timing.
+
+| Path | What it sees | What it clicks | Tell |
 |---|---|---|---|
-| Page JS / `el.click()` | same-origin DOM | `isTrusted=false` | scored immediately |
-| Sidecar BiDi (`performActions` from parent) | parent rect, guessed offset | trusted, wrong frame often | geometry rot; extra BiDi round-trips |
-| CapSolver / 2captcha | a screenshot, later | a token from a third party | token source + RTT |
-| **Catalog + Observer** | every BrowsingContext attach, including OOPIF / closed shadow | `Input` on the **child** BC, same `EventStateManager` as a real click | none beyond a real user |
+| Page JS | same-origin DOM | `isTrusted=false` | scored immediately |
+| Sidecar from the parent frame | a parent rect and a guessed offset | trusted, often the wrong frame | geometry rot, extra round trips |
+| A third-party solver | a screenshot, later | a token somebody else made | token source and round-trip time |
+| The chrome process | every browsing context, including cross-origin frames and closed shadow roots | the child context, through the same event path as a real click | none beyond a real visit |
 
-We already own the three pieces nobody else ships together: a patched Gecko,
-a single persona seed (TLS + UA + mouse), and a BiDi driver. The innovation
-is using the chrome-privileged process as the solver, not wrapping another
-API around the page.
+Three pieces have to be owned together for this to work: a patched Gecko, one
+persona seed behind TLS, UA and motion, and a driver that speaks to both. The
+solver is the privileged process, not another wrapper around the page.
 
-### 9.2 Pipeline (every `goto`)
+### 8.2 The pipeline of one goto
 
 ```
 goto(url)
-  NSS handshake (real Firefox, guise persona)
-  Observer attaches to every BrowsingContext
-  Catalog.classify(chrome signals) → (kind, target, token)
-    none      → document usable
-    score     → Token.wait (vendor write). Managed CF already does this
-    any act   → Prelude(top BC): settle, wander, wheel session, dwell, then the kind
-    checkbox  → Input.click(child BC, guise trajectory, catalog target)
-    visual    → Snapshot(child BC) → helper → Input on same BC
-    slider    → Snapshot → helper axis → Input.drag on same BC
-    audio     → media capture → helper STT → Input.type on same BC
-    pow       → ChromeWorker lanes in the browser → submit via the [work] address
-    fail      → typed error. Never CapSolver. Never a fabricated token
-    unknown   → fail closed. Adding a kind without a fixture is a red test
+  real handshake, guise persona
+  Observer attaches to every browsing context and announces its start
+  the first sighting opens a settle window, so a late widget is still seen
+  Classify: chrome signals -> kind, target, token channel
+    none      -> document usable
+    score     -> wait for the vendor's own write
+    any act   -> Prelude in the top context: settle, wander, wheel, dwell
+    checkbox  -> a trusted click in the child context, along a dealt path
+    slider    -> snapshot the widget, measure the axis, drag along a profile
+    pow       -> worker lanes in the browser, submit through the bound address
+    unclaimed -> refuse by name
+  reduce by severity: the page is solved at the widget that gates it
+  report every widget the page held
 ```
 
-No `challenge` MCP tool. Captcha is a property of `goto`.
+### 8.3 Catalog and primitives
 
-### 9.3 Extensible architecture (catalog + primitives)
+A vendor is data. `captcha/kinds/*.toml` binds chrome-visible signals to a kind,
+a target, and the channels a token can arrive on. Kinds are a closed set in
+`_schema.toml`, and the catalog reaches the browser as JSON in
+`LURIEN_CHALLENGE`.
 
-A vendor is not a C++ file. A vendor is a TOML that binds chrome-visible
-signals to a **kind**. Kinds are a closed enum. The engine implements kinds,
-not Cloudflare.
-
-**Closed kinds** (fail closed on a new member with no fixture):
-
-| Kind | Primitive | Success |
+| Kind | Primitive | Solved when |
 |---|---|---|
-| `none` | — | document usable |
-| `score` | Token.wait | vendor wrote the named field / cookie |
-| `checkbox` | Input.click on catalog target in child BC | Token.wait |
-| `visual` | Snapshot → helper → Input.click cells / type | Token.wait |
-| `slider` | Snapshot → helper axis → Input.drag | Token.wait |
-| `audio` | media → helper STT → Input.type | Token.wait |
-| `pow` | worker lanes in the browser → field, callback, or navigation | Token.wait |
-| `fail` | — | typed error |
-
-Adding **Turnstile / hCaptcha / reCAPTCHA / Arkose / Geetest / DataDome /
-Akamai** is a new `captcha/kinds/<vendor>.toml` that names:
-
-- signals (iframe `src` host/path, custom element, cookie, challenge URL)
-- kind (one of the table)
-- target (chrome-visible: role, selector, or “first checkbox in this BC”)
-- token (hidden input name, `postMessage` shape, cookie name)
-- integrity (always-block sitekeys that must refuse)
-
-Adding a **new kind** (a 3D game, a novel drag) is:
-
-1. Add the name to `_schema.toml`.
-2. Implement the primitive once in `Input` / `Snapshot` / `HelperSock`.
-3. One fixture that fails until the kind is wired.
-4. One live-vendor row before the README may name it.
-
-The registry test enumerates `_schema.toml` at run time. A kind with no
-fixture is red. A vendor TOML that names an unknown kind is red. A C++
-file under `additions/challenge/` whose identifier matches a vendor
-(`[Tt]urnstile|[Rr]ecaptcha|[Hh]captcha|[Aa]rkose`) is red.
-
-**Engine primitives** (fixed set, MPL, no vendor strings):
-
-| File | Job |
-|---|---|
-| `Observer` | attach to every BC; feed Classify |
-| `Catalog` | parse kinds/*.toml; reject unknown kind / missing field |
-| `Classify` | chrome signals → (kind, target, token spec) |
-| `Input` | trusted pointer / key / drag on a **named** BC |
-| `Prelude` | the visit before the act: settle, pointer path, wheel session, dwell, in the **top** BC |
-| `Token` | success = vendor write, never our JS string |
-| `Snapshot` | compositor grab of a named BC (not parent + black iframe) |
-| `HelperSock` | bytes to the vision and audio helpers; answer back; helper never sees the page |
-
-Trajectory for `Input` and the reading cadence for `Prelude` come from
-`guise::human::{mouse, scroll}`. Native `MouseTrajectories.hpp` stays deleted.
-
-v1 ships Catalog + Token for `score` (and `none` / `fail`). Managed CF
-holds because `goto` waits on the token hook, not `auto_solve`.
-`checkbox`, `pow` and `slider` are claimed on fixture rows that reproduce what a
-live widget checks: trusted events only, per-load randomness, and a refusal for
-the shape a scripted solver produces. `visual` and `audio` land per kind when a
-row exists for them.
-
-### 9.4 What we do not do
-
-- Do not keep `TurnstileInteractiveSolver`'s (28, 32) offset.
-- Do not write `TurnstileObserver.cpp`. Vendor = TOML.
-- Do not call 2captcha / CapSolver / any HTTP solver. Delete `third_party.rs`.
-- Do not `apply_stealth` inside the solver (double-spoof).
-- Do not treat CF `3x…FF` as a product gate. It is a dead Firefox oracle.
-- Do not put ONNX in libxul.
-- Do not claim a kind on the homepage until it has a live scorecard row.
-
-### 9.5 Fold / yank (packaging only)
-
-`software/captchaforge` is a second workspace. After Catalog + Token for
-`score` work, the directory is deleted. crates.io: 36 live versions,
-0 yanked, 88855 downloads, newest `0.2.40`. You cannot delete a crates.io crate.
-
-1. Retarget in-tree consumers. wafrift lock is `captchaforge 0.2.38`.
-   loginflow `captchaforge` feature dies.
-2. Last publish is a deprecation shim pointing at lurien.
-3. `cargo yank captchaforge@$v` for every live version:
-   `0.2.40 0.2.39 0.2.38 0.2.36 0.2.35 0.2.34 0.2.33 0.2.32 0.2.31 0.2.30 0.2.29 0.2.28 0.2.27 0.2.26 0.2.25 0.2.21 0.2.20 0.2.19 0.2.18 0.2.17 0.2.16 0.2.15 0.2.14 0.2.13 0.2.12 0.2.11 0.2.10 0.2.9 0.2.8 0.2.7 0.2.6 0.2.5 0.2.4 0.2.1 0.2.0 0.1.0`
-   Confirm `yanked=true` on all 36.
-4. Do not yank `guise` or any `guise-*`.
-
-Keep from captchaforge: vendor selectors as kind TOML, integrity fixtures,
-vision/audio as **processes**. Delete: CLI, `serve`, helm, GHCR, 5-arch bins,
-third-party solvers, Chromium/CDP leftovers, `auto_solve` as a public API.
-
-### 9.6 Engine patches
-
-v1 (must land before prove):
-
-1. Banner: skip `gRemoteControl.updateVisualCue()`.
-2. `MaskConfig.hpp` reads `LURIEN_CONFIG` first.
-3. No silent Firefox fallback in any launcher.
-4. Catalog + Token for `score`, so `goto` does not call a sidecar.
-
-v1.1 (per kind, measured on a live page):
-
-5. `checkbox` via Input on the child BC.
-6. `visual` / `slider` / `audio` / `pow` via Snapshot + HelperSock.
-
-Known leaks that stay in the README: matched-host Linux Firefox only;
-cross-OS fonts/WebGL/WebGPU; inert `canvas:seed`; proxyless TTL.
-
-## 11. Prove (before any `git mv`)
-
-On this host, with `LURIEN_BIN` + `DISPLAY`:
-
-- `lurien_gate` green (High/Critical identical to stock FF-150)
-- `live_detector_suite` green
-- Managed Turnstile: `goto` waits on the token hook; no `auto_solve` call
-- Banner absent in a headful screenshot
-- Missing binary: launch returns the hard error (unit-test the resolver)
-- One idle RSS number vs stock FF-150, written to `bench-results/`
-
-Gates skip-loud without binary/display. Do not ship a “green” that was a skip.
-
-## 12. Move order
-
-Do not rearrange first.
-
-1. **Rename + API lock on current trees**
-   - `reynard.rs` → `lurien.rs`, symbols, env, resolver `Result`
-   - Banner patch under `software/reynard/patches` (still that path until step 3)
-   - Profile import on `FoxBrowserConfig.profile_dir`
-   - Bridge: missing engine is fatal
-2. **Prove** (section 11)
-3. **Move**
-   - `git mv software/reynard software/browser/engine` (or the tree in §3)
-   - `git mv` guise / foxdriver / bridge / echo
-   - Root workspace members + `[workspace.dependencies]`
-   - CI path filters
-   - install.sh
-   - Grep `reynard` / `REYNARD_` / `libs/runtime/guise` / `software/captchaforge` as specified
-4. **Observer + yank** (section 9). Delete `software/captchaforge` only after `goto` no longer calls it.
-5. **Faces** (section 8)
-
-## 13. Dependents
-
-Every path below is retargeted in the same move commit. No leftover `libs/runtime/guise`.
-
-### 13.1 Move with the product tree
-
-| Today | After |
-|---|---|
-| `libs/runtime/guise` | `software/browser/guise` |
-| `libs/runtime/guise-profiles` | `software/browser/guise-profiles` |
-| `libs/runtime/guise-pacing` | `software/browser/guise-pacing` |
-| `libs/runtime/guise-choice` | `software/browser/guise-choice` |
-| `libs/runtime/guise-oracle` | `software/browser/guise-oracle` |
-| `libs/runtime/guise-bridge` | `software/browser/bridge` |
-| `libs/runtime/guise-echo` | `software/browser/echo` |
-| `libs/runtime/foxdriver` | `software/browser/foxdriver` |
-| `software/reynard` | `software/browser/engine` |
-| `software/captchaforge` | fold then delete |
-
-Root `Cargo.toml` members + `[workspace.dependencies]` paths update in that commit.
-
-### 13.2 Local path deps that follow
-
-| Consumer | Dep | Today |
-|---|---|---|
-| guise | guise-{profiles,pacing,choice,oracle}, foxdriver, echo (dev) | relative `../` |
-| guise-bridge | guise, foxdriver | `../` |
-| captchaforge + `challenge/` | guise, foxdriver | `../../libs/runtime/…` then deleted |
-| loginflow | optional guise; `captchaforge` feature | `../guise` — drop captchaforge feature |
-| `detonation/jsdet` | guise fingerprint | `../../libs/runtime/guise` |
-| `software/santhorchestrator` | optional guise | long relative path |
-| `web/truestack`, `web/wptrace` + enumerate | guise / guise-pacing | `../../libs/runtime/…` |
-| `detonation/httpdet`, `detonation/sear` | guise-profiles | `../../libs/runtime/guise-profiles` |
-| `libs/scanner/scanclient` | guise-profiles, guise-pacing | `../../runtime/…` |
-| `libs/offensive/interactsh` | guise-choice, guise-pacing | `../../runtime/…` |
-| `libs/performance/io/netshift` | guise-pacing | `../../../runtime/…` |
-| `libs/scanner/bugscope` | guise-pacing | `../../runtime/…` |
-| `libs/scanner/secmatch` | guise-choice | `../../runtime/…` |
-| `libs/runtime/headless` | guise-profiles | `../guise-profiles` |
-| rustenium-core vendor | stays | `libs/runtime/vendor/rustenium-core` |
-
-### 13.3 Registry pins (not paths) that must be retargeted before yank
-
-| Consumer | Pin | Action |
-|---|---|---|
-| `software/wafrift` + cli + captchaforge-bridge | `guise 0.1.2`, `guise-pacing 0.1.0`, `captchaforge 0.2.38`, `runtime-foxdriver 0.1.0` | path to `software/browser/…`; drop captchaforge after daemon |
-| `software/ahura` `browser.rs` | guise-bridge URL | daemon, then `lurien-mcp` |
-| `software/gossan` | crates.io `guise-pacing 0.1` | leave on registry (we still publish guise-*) |
-
-Absent on disk (do not resurrect): `software/meridian`, `web/calyx`. Delete the stale calyx comment on the captchaforge exclude when that exclude goes.
-
-## 14. Publish
-
-v1 publish set:
-
-- `lurien-browser` on crates.io (CLI + lib + both bins)
-- GitHub `santhreal/lurien-browser`
-- Engine binary: only if we actually host a tarball. Otherwise “build or set LURIEN_BIN”
-
-Not in v1: PyPI, npm, Node package, macOS/Windows/aarch64 artifacts, `.dev` domain.
-
-## 15. Sophistication bar
-
-### v1
-
-- One launch, lurien engine required
-- No `reynard` in shipped trees except the one-release alias table
-- Banner gone
-- Profile import: cookies, `logins.json`/`key4.db`, localStorage. Not extensions. Not `cert9.db` unless decided
-- Playwright Python + Node `executablePath`
-- `lurien-mcp` = Playwright-MCP names
-- Proxy works; no silent direct fallback
-- `lurien_gate` + `live_detector_suite` green on this host
-- Managed Turnstile holds via the token hook, not `auto_solve`
-- Honest README (Linux matched-host; listed leaks)
-- Idle RSS published
-- Default headful
-- Failure table in §6.2 all have a code path
-
-### v1 is not
-
-- Chromium
-- Live fingerprint updates
-- TCP/IP OS rewrite
-- Ahura hunt tools
-- “Solves hard captchas”
-- Universal install.sh that fetches an unpublished engine
-- npm / Node package / non-Linux
-
-### v1.1
-
-One live hard class, engine-side, measured. Vision helper is a second binary. Until that row is green, homepage captcha claim is managed CF only.
-
-## 16. Acceptance (v1)
-
-- `software/browser/` exists; `software/reynard/` is gone
-- `libs/runtime/` has no `guise*`, no `foxdriver`, no `guise-echo`
-- every §13 path dep builds against the new paths
-- `lurien` and `lurien-mcp` on PATH
-- `LURIEN_BIN` / `LURIEN_CONFIG` are the live names
-- Grep `\breynard\b` / `REYNARD_` in shipped trees is empty except documented aliases
-- Playwright (any language) launches via `executablePath`
-- MCP client attaches without prompt changes
-- No remote-control banner
-- `lurien as --profile ~/firefox-profile` restores cookies + logins
-- Missing binary: hard error, never stock Firefox
-- `lurien_gate` green with `LURIEN_BIN` + `DISPLAY`
-- Managed Turnstile demo still auto-passes
-- Proxy works; unreachable proxy does not fall back
-- README does not say hard captchas work
-- README does not claim a `.dev` or non-Linux install
-- wafrift, ahura, loginflow, jsdet, scanclient build
-- crates.io `captchaforge`: all 36 versions yanked; `guise` untouched
-
-## 17. Retired docs
-
-Already deleted:
-
-- `MASTER_PLAN/STEALTH_ECOSYSTEM_AUDIT.md`
-- `software/captchaforge/ROADMAP_v2.md`
-- `PLAN_GUISE_BROWSER_EXTRACTION.md`
-
-Keep (historical; do not execute):
-
-- `MASTER_PLAN/02_stealth.md`, `02_guise.md`, `14_captchaforge_hardening.md`
-
-## 18. CI
-
-Today:
-
-| Workflow | What it does | After |
-|---|---|---|
-| `.github/workflows/guise-msrv.yml` | MSRV 1.88, `check`/`test -p guise --features browser,http`, guise-echo. Path filter `libs/runtime/guise/**` | Retarget paths to `software/browser/{guise,foxdriver,echo}`. Keep guise-echo. Add `-p lurien-driver` when that crate exists |
-| `.github/workflows/guise-telemetry-free.yml` | `cargo tree` http-headers has no reqwest/scanclient/hickory/wreq; `local_echo_regression` | Keep. Path filters follow guise. This is the scanner-safe half |
-| `libs/runtime/guise/.github/workflows/ci.yml` | Delegates to `santh-project/santh-ci` | Move with the crate or delete if root CI covers it |
-| `software/reynard/.github/workflows/build.yml` | Camoufox **linux/windows/macos × x86_64/arm64/i686**, artifacts named `CamoufoxBuilds-*`, draft GH release, `CAMOUFOX_PASSWD` | v1 ships **linux x86_64 only**. New workflow `software/browser/.github/workflows/engine.yml`: linux x86_64, artifact `lurien-engine-linux-x86_64`. Do not publish Windows/macOS as lurien. Drop Camoufox artifact names |
-| `software/reynard/.github/workflows/repo-hygiene.yml` | Fork hygiene | Keep under `engine/` |
-| `software/captchaforge/.github/workflows/release.yml` | 5-arch `captchaforge` bins, GHCR `santhreal/captchaforge`, helm chart, `cargo publish` | **Delete** with the crate. Do not port helm, docker, or 5-arch CLI. lurien-browser publish is section 19 |
-| captchaforge `ci.yml` / `coverage.yml` / `docs.yml` / `fuzz.yml` / `bench.yml` / `stealth-matrix.yml` / `driver-matrix.yml` / `scorecard.yml` / `keyhog.yml` | Standalone workspace CI | Fold the tests that still matter into `software/browser/captcha` + root CI. Delete the rest |
-| `software/browser/docs/stack.sh` | reynard → guise → captchaforge → scorecard. Env `REYNARD_STAGING`, `REYNARD_BIN` | Rename stages and env to lurien. Engine → guise data → captcha (in-tree) → scorecard. `LURIEN_STAGING`, `LURIEN_BIN` |
-
-Path filters that still say `libs/runtime/guise` after the move are a ship-blocker.
-
-Live gates (`lurien_gate`, `live_detector_suite`) stay skip-loud in CI unless the runner has `LURIEN_BIN` + `DISPLAY`. Do not fake them green. A nightlies/self-hosted job on this host is the real gate.
-
-First-run CI on the lurien-browser crate must be green before the first crates.io publish (fleet rule).
-
-## 19. Packaging and release
-
-### 19.1 What we publish in v1
-
-| Artifact | Registry | Name | Notes |
+| `none` | none | the document is usable |
+| `score` | token wait | the vendor wrote its own field, cookie, storage key or message |
+| `checkbox` | trusted click in the child context | the token arrives |
+| `slider` | snapshot, measure, drag | the token arrives |
+| `pow` | worker lanes in the browser | the answer is accepted at its bound address |
+| `visual` | snapshot, helper, click | not claimed |
+| `audio` | media, helper, type | not claimed |
+| `fail` | none | never. The classification itself is the refusal |
+
+`docs/KINDS.md` is the procedure for both extensions, and it names the law that
+goes red at each step: adding a vendor is a TOML plus a fixture, adding a kind is
+nine steps from the schema name to the budget. A vendor TOML naming an unknown
+kind is red. A claimed kind with no runnable proof is red. A new kind that
+nobody wired is red rather than silently absent.
+
+The modules are fixed and carry no vendor strings: `Bootstrap`, `Observer`,
+`Catalog`, `Classify`, `Kinds`, `Solver`, `Input`, `Keys`, `Dynamics`,
+`Prelude`, `Token`, `Snapshot`, `Pow`, `HelperSock`, `Control`, `Clock`, `Geo`,
+`Net`, and the parent and child actors. They are chrome-privileged ES modules,
+packaged through `jar.mn`, and `lurien/tests/engine_package.rs` holds the
+packaging: a module missing from the manifest, an import that does not resolve,
+or a lost start hook is a red test rather than a browser that launches and
+observes nothing.
+
+Motion, typing rhythm and reading cadence come from `guise`. The driver owns the
+corpus and the sampler, deals a deck, and ships a seed; the browser owns the
+order and records which entry it used. The dealt index, not the observed motion,
+is the checkable claim, because Gecko coalesces pointer moves.
+
+### 8.4 What the solver does not do
+
+- No offset guessed from a parent rect.
+- No vendor identifier in the browser's modules.
+- No call to any third-party solving service.
+- No fabricated token, and no retry with a different persona unless the caller
+  asked for one.
+- No machine-learning runtime inside libxul. Vision and audio are helper
+  processes.
+- No kind named in the README before it has a dated scorecard row.
+
+### 8.5 The patches the browser carries
+
+`engine/patches/` holds the fork. Three patches are load-bearing for this
+product and `docs/REBASE.md` is the runbook when they stop applying:
+
+- `challenge-register.patch` starts the subsystem after the BiDi agent, adds the
+  module directory to the build, and adds the packaging rows.
+- `config.patch` reads `LURIEN_CONFIG` before the upstream name.
+- `browser-init.patch` and the banner work keep the remote-control cue off the
+  chrome.
+
+The rest are the upstream fingerprinting patches, which are inherited, not ours.
+
+## 9. Claimed and not claimed
+
+Claimed means there is a fixture, a runnable script, and a dated row in
+`docs/bench-results/challenge-scorecard.md`. Today that is `none`, `score`,
+`checkbox`, `slider`, `pow`.
+
+Not claimed, and refused by name at runtime:
+
+- `visual`. Needs a local model in the vision helper and a live row.
+- `audio`. Needs speech-to-text in a helper and a live row.
+
+Not built:
+
+- Browser branding still says upstream. A full engine build is required to
+  change it, and a full build currently fails on an unrelated Rust component.
+- The browser repository has diverged from its remote and is committed locally
+  only.
+- `lurien-driver` is unpublished.
+
+Not in scope:
+
+- Chromium.
+- An agent browser. This is a driver for people who write scripts.
+- Live fingerprint updates, or a TCP/IP stack rewrite.
+- Hunt tooling. That stays in its own product and calls `lurien-mcp`.
+- Anything but Linux x86_64.
+
+Known leaks, stated in the README:
+
+- Matched-host Linux Firefox only.
+- Cross-OS fonts, WebGL and WebGPU.
+- An inert `canvas:seed`.
+- Host TTL without a proxy.
+
+## 10. Publishing
+
+| Artifact | Where | Name | State |
 |---|---|---|---|
-| Rust lib + CLI | crates.io | `lurien-browser` | `[[bin]] name = "lurien"` and `name = "lurien-mcp"` inside that crate |
-| — | PyPI | — | **None.** Playwright talks to the binary. Do not publish `lurien` or `camoufox` as us |
-| GitHub repo | github.com | `santhreal/lurien-browser` | Public README lives here |
-| Engine tarball | GitHub Release only if we actually build one | `lurien-engine-linux-x86_64-<ver>.tar.gz` | Optional. install.sh must not pretend this exists until it does |
+| driver crate, two binaries | crates.io | `lurien-driver` | unpublished, gated on a claimed `visual` and `audio` |
+| persona crates | crates.io | `guise` family | published at `0.1.8` |
+| driver internals | crates.io | `runtime-foxdriver` | published, internal, not marketed |
+| retired crate | crates.io | `captchaforge` | 36 versions yanked, `0.2.41` is the notice |
+| the browser | GitHub | `santhreal/lurien-browser` | source only, no hosted tarball |
 
-Not in v1: PyPI, npm, Node package, GHCR image, Helm, Windows/macOS/aarch64 engine, `.dev`.
+Versions:
 
-### 19.2 What we stop publishing
+- `lurien-driver` starts at `0.1.0`.
+- The `guise` family keeps its own semver.
+- The browser's version is the Gecko version string, not a crate version.
+  `lurien --version` prints both.
+- `LURIEN_CONFIG` is versioned. Evidence rows carry their own version and the two
+  repositories are held equal by a test.
 
-| Artifact | Action |
+`Cargo.toml` authors is `Santh <64453045+santhreal@users.noreply.github.com>`.
+The public crate is MIT OR Apache-2.0. The fork keeps its MPL notice, and
+`docs/NOTICE` carries both.
+
+## 11. CI
+
+`.github/workflows/ci.yml` runs on every push to main and every pull request.
+Seven jobs, each one cheap and each one guarding a class that a local run misses:
+
+| Job | What it proves |
 |---|---|
-| crates.io `captchaforge` | Deprecation shim, then yank |
-| `wafrift-captchaforge-bridge` | One forwarding release, then delete |
-| ghcr.io/santhreal/captchaforge | Stop pushing. Leave old tags; do not retag as lurien |
-| captchaforge Helm | Delete with the crate |
-| 5-arch captchaforge CLI tarballs | Delete. lurien CLI is Linux-first; other OS later if the engine exists there |
-| crates.io `guise` | **Keep**. Persona lib. Do not yank, do not rename, do not turn into a browser |
-| `runtime-foxdriver` | Keep as internal path dep. Do not market |
+| `test` | `cargo test --workspace --all-targets` and the doc tests. Tests that need the browser skip loud |
+| `import-law` | the driver's graph reaches nothing outside guise and foxdriver, and guise without `browser` does not pull the driver |
+| `no-vendor-in-engine` | every vendor binding names a kind the schema closes |
+| `pow-worker` | the worker's own SHA-256 matches a reference over hundreds of inputs |
+| `resolver` | the scripts evaluated in the page parse, which no Rust test can see |
+| `e2e-scripts` | every live script parses, so a syntax error does not read as a skip |
+| `slider-measurement` | the measurement is arithmetic over a crop, including one the browser rendered |
 
-### 19.3 Versions
+Two rules hold the whole file:
 
-- `lurien-browser` starts at `0.1.0` (or `0.1.0-alpha`). New crate.
-- `guise` stays on its own semver (`0.1.6` today). Browser launch symbols moving out is a guise minor if anything public leaves; scanners using `http-headers` must not break.
-- Engine version is the Gecko/Camoufox version string (`150.0.2-beta.25` today), not the crate version. `lurien --version` prints both.
-- `LURIEN_CONFIG` JSON is versioned. A stale `REYNARD_CONFIG` blob is accepted for one release, then rejected.
+- A workspace member must resolve on a fresh clone. A path dependency pointing
+  outside the repository makes the tree unloadable on every machine but one, and
+  that is a defect, not a convenience.
+- A cross-repository proof skips loudly where the other repository is absent. The
+  packaging laws are vacuous without the browser checkout, and the worker digest
+  check prints a skip and exits 0.
 
-### 19.4 Authors / license / NOTICE
+The live gates stay out of CI. They need a browser and a display, and a run on
+this host is the real gate. A skip is never reported as green.
 
-- Cargo.toml `authors`: `Santh <64453045+santhreal@users.noreply.github.com>`
-- Public crate: MIT OR Apache-2.0
-- Engine tree: MPL-2.0 + Camoufox/Firefox NOTICE. Keep `NOTICE`. Engine-side captcha hooks are MPL (accepted).
-- No Python wheel.
+## 12. Testing policy
 
-### 19.5 install.sh honesty
+A test defends an observable contract and fails on a plausible bug. It does not
+assert source text, existence for its own sake, or a value read back out of the
+thing it is testing.
 
-If no engine tarball is hosted, install.sh wires a local build and exits 1 with the build recipe. `curl | sh` that claims to fetch Gecko is a lie until the Release asset exists.
+- Every claim in this file that names a script or a law is runnable. A guide that
+  cites a test name that no longer exists is red.
+- A regression test goes red against the pre-fix code. A fix is reported with the
+  variants that were re-injected and whether each was caught.
+- A number that lives in two repositories gets a test: the evidence version, the
+  helper protocol version, the completeness of the severity table, the prelude's
+  share of the budget.
+- Anything with a deadline, a budget or a retry asserts that it ends and asserts
+  the bound. Every refusal names the budget it was given.
+- A fixture that can be fooled stops being evidence. The adversarial page refuses
+  an untrusted click, a press with no approach, a forged token, and a read across
+  the origin boundary.
+- Statistical claims are asserted where the sample is.
 
-Fonts: `bundle/fonts/` is still not shipped (proprietary). Linux matched-host does not need them. Cross-OS personas stay unsupported in v1.
+## 13. Decisions
 
-## 20. Testing
-
-### 20.1 Must stay, renamed
-
-| Today | After | Class |
-|---|---|---|
-| `reynard_gate` | `lurien_gate` | High/Critical vs stock FF-150 |
-| `live_detector_suite` | same name | per-persona live + scorecard |
-| `reynard_canvas_audio_farble_live` | `lurien_*` | seed / farble |
-| `reynard_window_geometry*` | `lurien_*` | PHANTOM_WINDOW_HEIGHT |
-| `reynard_mouse_model_ownership` | `lurien_*` | guise owns mouse |
-| `e2e_reynard_bridge.sh` | `e2e_lurien_bridge.sh` | HTTP path |
-| other guise-bridge e2e (`dialog`, `mouse`, `sensors`, `upload`, `concurrent`) | keep | skip-loud without engine |
-| `local_echo_regression` | keep | Layer-2, no browser |
-| foxdriver `cross_origin_click` | keep | trusted click into OOPIF |
-| camoufox `software/reynard/tests/` Playwright suite | stay under `engine/tests/` | upstream; not a lurien product |
-
-### 20.2 Must add
-
-- Resolver: missing binary → `Err` with the install sentence. Mutation: reintroduce `Option` + Firefox fallback and this test goes red.
-- Every launch path (`Browser::launch`, bridge, MCP, CLI) hits that resolver. Adding a new launcher without it fails a registry test.
-- Banner absent (screenshot or pref/probe).
-- Profile import: cookies + logins round-trip; missing `key4.db` warns; corrupt `cookies.sqlite` errors.
-- Unreachable proxy does not fall back to direct.
-- MCP: Playwright tool names present; `challenge` absent.
-- Grep gate in CI: `\breynard\b` / `REYNARD_` empty in shipped trees except the alias table.
-- `cargo tree -p lurien-driver` does not pull scanclient / wafrift / ahura.
-
-### 20.3 Skip vs fail
-
-Tests skip-loud without `LURIEN_BIN` + `DISPLAY`.
-The product never skips. A published binary that cannot find the engine exits 1.
-
-### 20.4 Stock Firefox
-
-`STOCK_FIREFOX_BIN` stays for the oracle only. Not a product fallback. Document where the staged FF-150 lives on this host; do not put `/tmp/firefox-150` in the README.
-
-## 21. Decisions from this thread (do not reopen)
-
-- **Not an agent browser.** Do not compete with browser-use / Comet / Dia / Atlas. Capture Playwright users.
-- **The solver is catalog + primitives.** Closed kinds. Vendor = TOML. No vendor identifier in `engine/additions/challenge/`. Sidecar detect+offset-click is not a solver. Delete 2captcha/CapSolver. Ban the (28, 32) offset.
-- **Not novel until checkbox/visual land on a live vendor.** Stealth Firefox + Playwright API is Camoufox. `score` token hook is v1. Child-BC Input + Snapshot is the new sentence.
-- **MCP description is the skill.** No `SKILL.md`. No `challenge` tool.
-- **Ahura hunt stays Ahura.** jwt / wafrift / race / oob do not land in lurien. Ahura calls `lurien-mcp`.
-- **Three artifacts, one face.** Engine (MPL) + persona (`guise`, MIT) + driver (foxdriver + bridge). Public word: lurien.
-- **Do not fold foxdriver into guise.** Kills the stock-vs-patched oracle and pulls rustenium into scanners.
-- **foxdriver is Rust, ours.** Crate `runtime-foxdriver` 0.1.5, BiDi via rustenium. Not Python. Path-dep only after move; do not market. Camoufox `pythonlib/` is upstream tests, not a product.
-- **Hard captchas in Gecko.** Page sidecar cannot see chrome-privileged widget state. User accepted MPL on those files.
-- **VLM stays a helper process.** Not in libxul. Bytes come from a child-BC compositor grab, not a parent screenshot.
-- **v1 captcha claim is managed CF / score-class only.** Interactive Turnstile / recaptcha grid / Arkose are v1.1, measured on a live page, not a CF test key.
-- **Honest stealth:** matched-host Linux Firefox. Cross-OS fonts/WebGL/WebGPU, inert `canvas:seed`, proxyless TTL remain.
-- **Default headful.** Camoufox headless scores worse.
-- **Do not move trees until** launch API, banner, profile import, and a live gate exist on current paths.
-- **`guise` crate names stay.** crates.io persona lib. Every guise crate *path* moves to `software/browser/`. `libs/runtime/` holds none after cutover. Scanners retarget path deps.
-- **Yank every captchaforge version.** 36 live (0.1.0–0.2.40). Shim, then `cargo yank` all. Name stays reserved. Do not yank `guise`.
-- **Title the GitHub/crates crate `lurien-browser`.** Spoken/CLI/MCP: `lurien`. Dead 2021 config crate owns crates.io `lurien`; that is not a browser. No PyPI package.
-- **Engine rename is complete.** `LURIEN_BIN`, `LURIEN_CONFIG`, `software/browser/engine/`, test names. One-release aliases for `REYNARD_*` then delete.
-
-## 22. Env and leftover names
-
-| Today | After |
-|---|---|
-| `AHURA_GUISE_BRIDGE_URL` / `GUISE_BRIDGE_URL` | keep one release, then `LURIEN_BRIDGE_URL` or MCP only |
-| `MERIDIAN_GUISE_*` (still in bridge) | `LURIEN_*` or delete with Meridian (absent on disk) |
-| `GUISE_BRIDGE_HEADFUL` / `GUISE_BRIDGE_TZ` | `LURIEN_HEADFUL` / `LURIEN_TZ` |
-| `MOZ_DISABLE_CONTENT_SANDBOX` | keep (Gecko). Not a product name |
-| `CAMOU_CONFIG` | keep as last-resort engine read |
-| `CAMOUFOX_PASSWD` | engine fetch secret. Rename in docs to lurien fetch; value can stay |
-| rustenium `RUSTENIUM_COMMAND_TIMEOUT_SECS` | keep; comments say lurien |
-| `CARGO_TARGET_DIR` | never set; `stack.sh` still hard-fails if target is inside Santh |
-
-## 23. Docs that keep `software/browser/` maintainable
-
-These ship in the same change as the move. A tree with no owners is unmaintainable.
-
-| File | Owns | Must say |
-|---|---|---|
-| `README.md` (folder root) | public face | what lurien is, crates, install, honest leaks, `score` only until a live row |
-| `docs/TREE.md` | folder owners | every directory, who may import whom, one-way: lurien → guise/foxdriver; guise ↛ engine C++; captcha/kinds → Catalog; helpers ↛ page |
-| `docs/KINDS.md` | extension | add a vendor (TOML + fixture). add a kind (`_schema.toml` + primitive + fixture). unknown kind is red |
-| `docs/ENGINE.md` | build | Camoufox `make`, `LURIEN_BIN`, linux x86_64 only |
-| `docs/REBASE.md` | fork life | rebase onto next Firefox/Camoufox; which patches must apply; banner + config + observer register |
-| `docs/NOTICE` | license | MPL engine + MIT crate + Camoufox/Firefox |
-| crate `--help` + MCP description | skill | no `SKILL.md`. no `challenge` tool |
-| `lurien-driver` CHANGELOG | crate | first 0.1.0 |
-| captchaforge deprecation CHANGELOG | yank | points at lurien; yank date |
-| wafrift README | consumer | delete Chromium / captchaforge sentences |
-
-**Import law (enforced, not prose):**
-
-- `lurien` may depend on guise + foxdriver. It may not depend on captchaforge.
-- guise `browser` feature may depend on foxdriver. guise default features may not.
-- `engine/additions/challenge/` has no vendor identifiers. CI greps them out.
-- `captcha/kinds/*.toml` is the only place a vendor name is allowed as a product binding.
-- helpers (`vision` / `audio`) speak HelperSock. They never import foxdriver. `pow`
-  needs no helper: the search runs in the browser.
-- scanners keep `guise-*` crate names. They do not import `lurien` or `foxdriver`.
-
-Do not write:
-
-- `SKILL.md`
-- a homepage that names `checkbox`/`visual` before a live scorecard row
-- `lurien.dev` until owned
-- Camoufox marketing as the public README
-
-## 24. Extra acceptance
-
-- guise-msrv + telemetry-free path filters match `software/browser/{guise,foxdriver,echo}`
-- captchaforge release.yml / helm / GHCR are gone
-- all 36 crates.io `captchaforge` versions yanked (`yanked=true` on the API)
-- engine workflow publishes linux x86_64 lurien artifacts, not `CamoufoxBuilds-*`
-- `stack.sh` speaks lurien
-- no `pip install lurien`; Playwright uses `executablePath`
-- `cargo add lurien-driver` is the Rust face
-- no helm, no captchaforge docker tag reuse
-- CHANGELOG + NOTICE + authors line present
-- `software/browser/README.md` plus `docs/{PLAN,TREE,KINDS,ENGINE,REBASE}.md` exist; TREE import law matches Cargo.toml
-- `_schema.toml` kinds all have a fixture; unknown kind fails closed
-- grep of `engine/additions/challenge/` for vendor names is empty
-- this file’s §21 decisions are all reflected in README/help
+- **The browser is the solver.** A page sidecar cannot see a cross-origin
+  widget's state, so the work happens in the privileged process.
+- **A vendor is data, a kind is code.** Kinds are a closed set. Adding a vendor
+  is a TOML and a fixture. There is no vendor identifier in the browser's
+  modules.
+- **One registry behind every face.** One `VerbSpec` per verb, `Session::call` as
+  the only entry, `docs/VERBS.md` generated, a face that bypasses it is red.
+- **Evidence is append-only.** A diagnostic row is never a verdict, and a verdict
+  belongs to one visit.
+- **A claim needs a proof that can be run again.** Fixture plus script plus a
+  dated scorecard row, or the kind is refused by name.
+- **A silent browser is not a clean page.** The subsystem announces its start on
+  every run, and `goto` refuses a session that never did.
+- **Dynamics are never a constant.** The driver samples and deals; the browser
+  orders and records. Decks are salted apart.
+- **A page is solved at the widget that gates it.** Severity outranks signal
+  count, and every widget the page held is reported.
+- **A solve is observed where the vendor chose to answer.** An empty named
+  channel is a refusal, not a pass.
+- **Failures are typed and name a next action.** No error is a bare string.
+- **Helpers are processes.** No model runtime in libxul. Bytes come from a
+  compositor grab of the widget's own context.
+- **The driver and the persona library stay apart.** Folding the driver into
+  guise would kill the stock-versus-patched oracle and pull the BiDi stack into
+  scanners.
+- **Default headful.** Headless scores worse and is a documented weaker mode.
+- **Honest stealth.** Matched-host Linux Firefox, with the leaks in section 9
+  written down rather than papered over.
+- **A published crate's public surface is documented or the build fails.** A doc
+  line states what a field name cannot: a body the protocol never delivers, a
+  phase that is absent, a value kept as base64.

@@ -25,8 +25,8 @@ logged-in desktop session). `MOZ_DISABLE_CONTENT_SANDBOX=1`.
 | Idle RSS | 351916 KiB (351 MiB) vs no stock FF-150 RSS compare this turn |
 | `cargo tree -p lurien-driver` | no scanclient / wafrift / ahura / captchaforge |
 | crates.io captchaforge | live=`0.2.41` shim; 36 prior yanked. `guise` 0.1.6 not yanked |
-| §13 path deps | loginflow, scanclient, wafrift-captchaforge-bridge `cargo check --offline` OK against `software/browser/{guise,foxdriver}`. No leftover `libs/runtime/guise` path. jsdet workspace blocked by foreign `faultkit ^0.1` vs `0.2.2`, not a guise path |
-| Ahura | no guise/foxdriver/lurien Cargo dep. `AHURA_GUISE_BRIDGE_URL` HTTP face kept one release (PLAN §8) |
+| Consumer path deps | loginflow, scanclient, wafrift-captchaforge-bridge `cargo check --offline` OK against `software/browser/{guise,foxdriver}`. No leftover `libs/runtime/guise` path. jsdet workspace blocked by foreign `faultkit ^0.1` vs `0.2.2`, not a guise path |
+| Ahura | no guise/foxdriver/lurien Cargo dep. `AHURA_GUISE_BRIDGE_URL` HTTP face kept one release |
 | Engine CI leftover | `engine/.github/workflows/build.yml` still uploads `CamoufoxBuilds-*` for linux/windows/macos. v1 does not host an engine tarball. `software/browser/.github/workflows/engine.yml` is not shipped |
 
 `lurien_gate` and `live_detector_suite` are green on this host. Do not treat a skipped run as green.

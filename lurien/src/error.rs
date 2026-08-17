@@ -1,4 +1,4 @@
-//! Typed failures from §6.2 of the product spec.
+//! Typed failures. The product spec lists them in `docs/PLAN.md` section 5.2.
 
 /// Every launcher-visible failure. Missing engine is never an `Option`.
 #[derive(Debug, thiserror::Error)]
