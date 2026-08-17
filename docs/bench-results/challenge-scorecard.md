@@ -125,6 +125,32 @@ The `visual` fixture rules out a grid answered without looking:
   left `dyn.grid` unnamed, which turned phase one red with the answer still
   accepted, so the pacing claim is held by the deck and not by the solve.
 
+What the `visual` row does not cover, measured against two live deployments on
+2026-08-17 so the gap is a number rather than a caveat:
+
+- A live reCAPTCHA v2 image challenge is the shape this engine reads: nine
+  `.rc-imageselect-tile` elements in a `rc-imageselect-table-33` table, the object
+  in a `strong` inside `.rc-imageselect-desc-no-canonical`, and
+  `#recaptcha-verify-button` to confirm. The selectors are not the obstacle.
+- The obstacle is perception. The tiles are 130 px photographs carrying
+  high-frequency noise, and the object is often a small part of a street scene. On
+  a crop of a live "cars" challenge whose answer was tiles 2, 4 and 7, CLIP
+  ViT-B/32 with generic alternatives chose 2, 4 and 6: one tile that held no car
+  and one car it did not see. Against a sixteen-word vocabulary of the classes
+  reCAPTCHA asks for, the cosine to "car" was within 0.01 of the best wrong class
+  on every tile, and `fire hydrant` outscored `car` on six of nine. Median
+  filtering and prompt ensembles moved the numbers by less than the spread.
+  Whole-tile captioning is the wrong instrument for a small object in scenery; a
+  detector is.
+- A live hCaptcha challenge is not a tile grid at all. On the vendor's own demo it
+  renders one 500x470 canvas with no per-tile element, and the tasks sampled were
+  "Find all animals the given number of times", "Please click on the animal who
+  jumps the highest" and "Move ONE animal to the matching silhouette": counting,
+  comparison and a drag, not tile classification.
+- So `hcaptcha`, `recaptcha` and `arkose` carry no `[grid]` table. Binding them
+  would produce confident wrong sets on a live page, which is worse than a refusal
+  that names the widget.
+
 The `prelude` fixture rules out a solve that clicks a page nobody read:
 
 - The widget writes its token only when the parent reports at least six trusted
