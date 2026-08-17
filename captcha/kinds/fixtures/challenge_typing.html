@@ -1,0 +1,186 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>typed answer</title>
+<!--
+  The keystroke fixture: a page that measures how its answer was typed and
+  refuses a cadence no hand produces.
+
+  Same shape as the proof-of-work fixture, so a token still proves a real search
+  and real keys, but the work is small and the gate is the timing. A token is
+  written only when all of these hold:
+
+    - the digest clears the difficulty, checked here with crypto.subtle,
+    - every key event was trusted,
+    - every key was held down for a measurable time, which a keydown followed
+      immediately by a keyup is not,
+    - the holds are not all one number,
+    - the gaps between keys are not all one number either.
+
+  A paste fails the first gate, a value assignment the second, and a loop that
+  types at a fixed rate with no hold fails the last three. The dispersion of the
+  gaps is reported in `window.__pow.typing` rather than gated on: this page sees
+  four to six keystrokes, which is too small a sample to threshold, and the
+  distribution is held by the driver's own test over the whole deck.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 16px; }
+  input { font: 13px monospace; width: 22em; }
+  #state { margin-top: 8px; }
+</style>
+
+<h1>Type the answer</h1>
+<p id="ask"></p>
+<label>Response <input name="pow-response" autocomplete="off"></label>
+<input type="hidden" name="fixture-token" value="">
+<div id="state">waiting</div>
+
+<script>
+  const hex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+  const random = n => hex(crypto.getRandomValues(new Uint8Array(n)));
+
+  // Four hex zeros: tens of thousands of digests, so the nonce is long enough to
+  // have a rhythm at all, and still well under a second of grinding.
+  const challenge = random(12);
+  const difficulty = 4;
+  window.__pow = { challenge, difficulty };
+
+  // Below this the answer is too short to say anything about timing. A run that
+  // ends here is inconclusive rather than a pass, and it says so.
+  const MIN_KEYS = 3;
+
+  // A key a hand pressed is down for tens of milliseconds, and two keys are never
+  // down for exactly the same time. A keydown followed by an immediate keyup reads
+  // as under a millisecond.
+  const MIN_HOLD_MS = 8;
+  const HOLD_RANGE_MS = 4;
+
+  // A typist crossing the number row does not repeat a gap under a tenth of a
+  // second, and does not hold one rate: the floor separates a real flight time
+  // from a driver's fixed dwell, and the dispersion floor separates a sampled
+  // rhythm from one constant rate plus timer jitter, which lands near 0.01.
+  const MIN_GAP_MS = 100;
+  const GAP_CV_FLOOR = 0.05;
+
+  const field = document.querySelector('input[name="pow-response"]');
+  const token = document.querySelector('input[name="fixture-token"]');
+  const state = document.getElementById("state");
+  document.getElementById("ask").textContent =
+    `sha256("${challenge}" + response) must start with ${difficulty} zeros`;
+
+  let untrusted = false;
+  const downs = [];
+  const holds = [];
+  const pending = new Map();
+
+  field.addEventListener("keydown", event => {
+    if (!event.isTrusted) {
+      untrusted = true;
+      return;
+    }
+    downs.push(event.timeStamp);
+    pending.set(event.key, event.timeStamp);
+  });
+
+  // The verdict is taken on keyup, not on input. An input event fires while the
+  // last key is still down, so a page that judges there is one hold short of the
+  // characters it received and would refuse every typist alive.
+  field.addEventListener("keyup", event => {
+    if (!event.isTrusted) {
+      untrusted = true;
+      return;
+    }
+    const down = pending.get(event.key);
+    if (down !== undefined) {
+      holds.push(event.timeStamp - down);
+      pending.delete(event.key);
+    }
+    judge();
+  });
+
+  const gaps = () => downs.slice(1).map((ts, i) => ts - downs[i]);
+  const distinct = values => new Set(values.map(v => Math.round(v))).size;
+
+  function cv(values) {
+    if (values.length < 2) {
+      return null;
+    }
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    if (mean <= 0) {
+      return null;
+    }
+    const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+    return Math.sqrt(variance) / mean;
+  }
+
+  async function digest(input) {
+    const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+    return hex(new Uint8Array(buffer));
+  }
+
+  // A value that arrives any way other than through the keyboard is refused before
+  // anything is measured.
+  field.addEventListener("input", event => {
+    if (!event.isTrusted) {
+      untrusted = true;
+    }
+  });
+
+  // Every keystroke is checked, and a refusal names the shape that produced it, so
+  // a run that fails says what it typed rather than going quiet.
+  async function judge() {
+    const response = field.value.trim();
+    if (!response) {
+      return;
+    }
+    const hash = await digest(challenge + response);
+    if (untrusted) {
+      state.textContent = "refused: the response was not typed";
+      return;
+    }
+    if (!hash.startsWith("0".repeat(difficulty))) {
+      state.textContent = `wrong: ${hash.slice(0, 8)}`;
+      return;
+    }
+    if (response.length < MIN_KEYS) {
+      state.textContent = `short: ${response.length} characters is not a rhythm`;
+      return;
+    }
+    if (downs.length < response.length) {
+      state.textContent = `refused: ${downs.length} keys for ${response.length} characters`;
+      return;
+    }
+    if (holds.length < response.length) {
+      state.textContent = `refused: ${holds.length} holds for ${downs.length} keys`;
+      return;
+    }
+    if (holds.some(ms => ms < MIN_HOLD_MS)) {
+      state.textContent = `refused: a key was held ${Math.round(Math.min(...holds))}ms`;
+      return;
+    }
+    if (Math.max(...holds) - Math.min(...holds) < HOLD_RANGE_MS) {
+      state.textContent = `refused: every key was held about ${Math.round(holds[0])}ms`;
+      return;
+    }
+    const spread = gaps();
+    if (Math.min(...spread) < MIN_GAP_MS) {
+      state.textContent = `refused: a gap of ${Math.round(Math.min(...spread))}ms is not a hand`;
+      return;
+    }
+    const dispersion = cv(spread);
+    if (dispersion === null || dispersion < GAP_CV_FLOOR) {
+      state.textContent = `refused: gap cv ${dispersion === null ? "none" : dispersion.toFixed(3)}`;
+      return;
+    }
+    window.__pow.typing = {
+      keys: downs.length,
+      gaps: spread.map(ms => Math.round(ms)),
+      holds: holds.map(ms => Math.round(ms)),
+      gapCv: cv(spread),
+      distinctGaps: distinct(spread),
+      distinctHolds: distinct(holds),
+      minHold: Math.round(Math.min(...holds)),
+    };
+    token.value = `fixture-typed-${response}`;
+    state.textContent = "solved";
+  }
+</script>

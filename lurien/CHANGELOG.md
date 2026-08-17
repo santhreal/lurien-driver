@@ -83,6 +83,18 @@
 - `goto` waits for a verdict for as long as the budgets it granted the engine, instead
   of a fixed 25s. A page whose kind budget outlived that constant was killed mid-solve
   and reported as the page probe saw it, which on a cleared widget is `none`.
+- A typed answer has a rhythm. The driver samples a gap per pair class and a hold per
+  character class from the persona's own typing model, ships them as a deck, and
+  `Keys.sys.mjs` deals one entry per keystroke and classifies each digraph, so two keys
+  of one class in the same word are not the same number. The engine waits the gap,
+  presses, waits the hold, releases. A plan without one entry per character is refused
+  rather than typed at one rate, and no typo is ever injected into an answer: a
+  corrected character is briefly wrong in a field the page reads on every event.
+- A launch waits for the browser to answer a command, not for its port to open. The
+  remote agent binds its socket seconds before it answers anything, and rustenium
+  allows a hardcoded five seconds for `session.new`, so a loaded host reported a
+  healthy browser as a failed launch. `session.status` needs no session and is now the
+  readiness question, bounded at 60s with the address named in the failure.
 - The `pow` kind is solved in the browser with no helper process. The binding's
   `[work]` table says where the challenge and difficulty live and where the answer
   goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by

@@ -269,6 +269,8 @@ impl ChallengeConfig {
             "trajectory_deck": deck(seed, TRAJECTORY_SALT, approach_path),
             "drag_deck": deck(seed, DRAG_SALT, drag_profile),
             "prelude_deck": deck(seed, PRELUDE_SALT, prelude_plan),
+            "key_deck": deck(seed, KEY_SALT, key_plan),
+            "key_layout": { "hot": hot_pairs() },
         });
         if let Some(dir) = self.modules.as_ref() {
             config["modules"] = serde_json::Value::String(dir.display().to_string());
@@ -387,6 +389,14 @@ fn with_dynamics(raw: &str) -> String {
         map.entry("prelude_deck")
             .or_insert_with(|| deck(seed, PRELUDE_SALT, prelude_plan));
     }
+    if !map.contains_key("keys") {
+        map.entry("key_deck").or_insert_with(|| deck(seed, KEY_SALT, key_plan));
+    }
+    // The pair table is not a shape a caller names: it is how the engine reads the
+    // classes the deck is keyed by, so a caller that ships its own keystroke plan
+    // still gets it.
+    map.entry("key_layout")
+        .or_insert_with(|| serde_json::json!({ "hot": hot_pairs() }));
     map.insert("dynamics_seed".to_string(), seed.into());
     value.to_string()
 }
@@ -407,12 +417,13 @@ fn source_modules() -> Option<PathBuf> {
 /// Environment variable naming the dynamics seed, so a run can be replayed.
 pub const SEED_ENV: &str = "LURIEN_DYNAMICS_SEED";
 
-/// Salts, so one seed yields three unrelated decks rather than three views of one
-/// stream: a session whose drags mirror its approaches is a correlation a vendor
-/// can measure across visits.
+/// Salts, so one seed yields four unrelated decks rather than four views of one
+/// stream: a session whose drags mirror its approaches, or whose keystrokes move
+/// with its pointer, is a correlation a vendor can measure across visits.
 const TRAJECTORY_SALT: u64 = 0x5f37_2d1b;
 const DRAG_SALT: u64 = 0xb1c9_44a7;
 const PRELUDE_SALT: u64 = 0x27e6_8f03;
+const KEY_SALT: u64 = 0x6d21_c95e;
 
 /// The seed the session's dynamics are drawn from.
 ///
@@ -508,6 +519,142 @@ fn drag_profile(rng: &mut rand::rngs::StdRng) -> serde_json::Value {
     rows.push(serde_json::json!({ "f": 1.0 - correction, "dy": 0.0, "dt": 33 }));
     rows.push(serde_json::json!({ "f": 1.0 + correction / 3.0, "dy": -0.4, "dt": 21 }));
     serde_json::Value::Array(rows)
+}
+
+/// The text the typing model is sampled over.
+///
+/// One pass covers every class the engine distinguishes: frequent letter pairs,
+/// rare ones, a repeat, spaces, a run of digits, and a capital. The engine never
+/// types this; it is the corpus the per-class numbers are drawn from, the way the
+/// pointer corpus is a set of recorded paths rather than the path used.
+const TYPING_CORPUS: &str =
+    "the quick brown fox jumps over 7 lazy dogs while filling A44 code 2026 into a small box";
+
+/// One keystroke sample: a gap per pair class and a hold per character class.
+///
+/// Timing comes from `guise::human::keystroke`, the same model the driver's own
+/// typing uses, so a captcha answer is typed by the persona that produced the
+/// handshake. The classes are that model's own: a pair it knows is frequent, a
+/// rare pair, a space, and two digits, plus a hold per character shape. Drawing a
+/// single number and repeating it would be the cadence a keystroke-dynamics
+/// classifier is built to catch, so a class with no sample in one pass is left out
+/// of the entry and the engine falls back inside the family rather than to a
+/// constant.
+fn key_plan(rng: &mut rand::rngs::StdRng) -> serde_json::Value {
+    use guise::human::keystroke::{plan_keystrokes, TypingPlan};
+    // No typos: a correction types a wrong character into the answer field first,
+    // and a page that reads its field on every input event, which is exactly what a
+    // proof-of-work page does, would see an answer that is briefly wrong. The
+    // driver's own typing keeps corrections; a solve does not.
+    let plan = TypingPlan {
+        typo_probability: 0.0,
+        ..TypingPlan::default()
+    };
+    let keys = plan_keystrokes(TYPING_CORPUS, plan, rng);
+    let chars: Vec<char> = TYPING_CORPUS.chars().collect();
+    let mut gaps: std::collections::BTreeMap<&str, Vec<u64>> = std::collections::BTreeMap::new();
+    let mut holds: std::collections::BTreeMap<&str, Vec<u64>> = std::collections::BTreeMap::new();
+    for (i, key) in keys.iter().enumerate() {
+        holds
+            .entry(hold_class(key.ch))
+            .or_default()
+            .push(u64::from(key.hold_ms));
+        // The first keystroke has no pair, and guise gives it no gap either.
+        if i == 0 {
+            continue;
+        }
+        let previous = chars.get(i - 1).copied().unwrap_or(' ');
+        gaps
+            .entry(gap_class(previous, key.ch))
+            .or_default()
+            .push(u64::from(key.gap_ms_before));
+    }
+    serde_json::json!({
+        "gap": pick_one(&gaps, rng),
+        "hold": pick_one(&holds, rng),
+    })
+}
+
+/// One value per class, drawn from that class's samples in this pass.
+fn pick_one(
+    table: &std::collections::BTreeMap<&str, Vec<u64>>,
+    rng: &mut rand::rngs::StdRng,
+) -> serde_json::Value {
+    use rand::Rng;
+    table
+        .iter()
+        .filter(|(_, values)| !values.is_empty())
+        .map(|(name, values)| {
+            let ms = values[rng.gen_range(0..values.len())];
+            ((*name).to_string(), serde_json::json!(ms))
+        })
+        .collect::<serde_json::Map<_, _>>()
+        .into()
+}
+
+/// Which pair class `previous` to `ch` falls in, as the typing model divides them.
+///
+/// The engine classifies the same way, on the same names, from the pair table this
+/// module ships. A class here that the engine does not know would ship numbers
+/// nothing reads.
+fn gap_class(previous: char, ch: char) -> &'static str {
+    if ch.is_whitespace() {
+        "space"
+    } else if previous.is_ascii_digit() && ch.is_ascii_digit() {
+        "digit"
+    } else if is_hot_pair(previous, ch) {
+        "hot"
+    } else {
+        "cold"
+    }
+}
+
+/// Which hold class `ch` falls in. Shift costs time, and a digit is off the home
+/// row, which is why the model holds them longer than a letter.
+fn hold_class(ch: char) -> &'static str {
+    if ch.is_whitespace() {
+        "space"
+    } else if ch.is_ascii_digit() {
+        "digit"
+    } else if ch.is_ascii_lowercase() {
+        "lower"
+    } else if ch.is_uppercase() {
+        "upper"
+    } else {
+        "other"
+    }
+}
+
+/// Whether the typing model treats this pair as a frequent one.
+///
+/// Read out of the model rather than restated: the frequent-pair table is private
+/// to `guise`, and the envelope it returns for a pair is the only public statement
+/// of whether that pair is in it.
+fn is_hot_pair(previous: char, ch: char) -> bool {
+    use guise::human::keystroke::{bigram_gap, COLD_BIGRAM_GAP_MAX_MS, COLD_BIGRAM_GAP_MIN_MS};
+    if ch.is_whitespace() || previous.is_ascii_digit() && ch.is_ascii_digit() {
+        return false;
+    }
+    bigram_gap(previous, ch) != (COLD_BIGRAM_GAP_MIN_MS, COLD_BIGRAM_GAP_MAX_MS)
+}
+
+/// The pairs the engine must treat as frequent, as the model answers for them.
+///
+/// Every lowercase letter pair is asked once, at launch, and the ones the model
+/// answers fast are shipped. The browser then classifies a pair without holding a
+/// corpus of its own, and a change to the model's table reaches the engine on the
+/// next launch rather than in a second copy that drifts.
+fn hot_pairs() -> Vec<String> {
+    let mut pairs = Vec::new();
+    for first in b'a'..=b'z' {
+        for second in b'a'..=b'z' {
+            let (a, b) = (char::from(first), char::from(second));
+            if is_hot_pair(a, b) {
+                pairs.push(format!("{a}{b}"));
+            }
+        }
+    }
+    pairs
 }
 
 /// Points in the pre-touch wander across the viewport.
@@ -989,6 +1136,7 @@ mod tests {
             ("trajectory", TRAJECTORY_SALT, approach_path as fn(&mut _) -> _),
             ("drag", DRAG_SALT, drag_profile as fn(&mut _) -> _),
             ("prelude", PRELUDE_SALT, prelude_plan as fn(&mut _) -> _),
+            ("key", KEY_SALT, key_plan as fn(&mut _) -> _),
         ] {
             let dealt = deck(19, salt, sample);
             let rows = dealt.as_array().expect("deck array");
@@ -1021,6 +1169,99 @@ mod tests {
             deck(4_242, DRAG_SALT, approach_path),
             "two decks came off one stream"
         );
+    }
+
+    /// A typed answer is measured on two numbers per key: the gap before it and how
+    /// long it was held. One number repeated is the cadence a keystroke-dynamics
+    /// classifier reads as a machine, so the deck has to carry a spread, and it has
+    /// to carry one per class because a gap belongs to a pair of keys rather than to
+    /// a key.
+    #[test]
+    fn a_typed_answer_carries_a_gap_per_pair_and_a_hold_per_key() {
+        let dealt = deck(7, KEY_SALT, key_plan);
+        let rows = dealt.as_array().expect("key deck");
+        let mut gaps: Vec<f64> = Vec::new();
+        let mut by_class: std::collections::BTreeMap<&str, Vec<u64>> =
+            std::collections::BTreeMap::new();
+        for row in rows {
+            let gap = row["gap"].as_object().expect("a gap table");
+            let hold = row["hold"].as_object().expect("a hold table");
+            // Every class the corpus exercises: the engine falls back inside the
+            // family for a missing one, and a deck missing one silently types every
+            // pair of that class at another class's rate.
+            for class in ["hot", "cold", "space", "digit"] {
+                let ms = gap
+                    .get(class)
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or_else(|| panic!("no {class} gap was sampled"));
+                assert!(ms > 0, "a {class} gap of nothing is a paste");
+                gaps.push(ms as f64);
+                by_class.entry(class).or_default().push(ms);
+            }
+            for class in ["lower", "upper", "digit", "space"] {
+                let ms = hold
+                    .get(class)
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or_else(|| panic!("no {class} hold was sampled"));
+                assert!(ms > 0, "a key held for no time is not a key press");
+            }
+        }
+        // The model's own ordering, across the deck rather than within one entry: a
+        // frequent pair is faster than a rare one and a space is faster than either,
+        // but the model also pauses to think every tenth key or so, and that pause
+        // lands on whichever pair it fell on. A deck where the medians disagree has
+        // lost the pair model; a single entry that disagrees is a typist thinking.
+        let median = |class: &str| {
+            let mut values = by_class[class].clone();
+            values.sort_unstable();
+            values[values.len() / 2]
+        };
+        assert!(
+            median("hot") < median("cold"),
+            "a frequent pair was not the fast one: {} against {}",
+            median("hot"),
+            median("cold")
+        );
+        assert!(
+            median("space") < median("cold"),
+            "a space was slower than a rare pair"
+        );
+        assert!(
+            median("digit") > median("hot"),
+            "two digits were typed as fast as a frequent letter pair"
+        );
+        // Dispersion, measured the way the model's own detector measures it: a
+        // near-uniform cadence is the tell, and a deck of one number would pass every
+        // assertion above.
+        let mean = gaps.iter().sum::<f64>() / gaps.len() as f64;
+        let variance = gaps.iter().map(|ms| (ms - mean).powi(2)).sum::<f64>() / gaps.len() as f64;
+        let cv = variance.sqrt() / mean;
+        assert!(cv >= 0.1, "the deck's gaps vary by {cv:.3}, which is a machine cadence");
+    }
+
+    /// The engine classifies a pair from the table this module ships. A pair the
+    /// model calls frequent and the table omits is typed at the rare-pair rate,
+    /// which is the slow half of the model missing.
+    #[test]
+    fn the_frequent_pairs_the_engine_reads_are_the_ones_the_model_names() {
+        let pairs = hot_pairs();
+        assert!(
+            pairs.len() >= 20,
+            "{} frequent pairs is not a typing corpus",
+            pairs.len()
+        );
+        assert!(pairs.contains(&"th".to_string()), "th is not in the table");
+        assert!(!pairs.contains(&"qz".to_string()), "qz is a rare pair");
+        for pair in &pairs {
+            let mut chars = pair.chars();
+            let (a, b) = (chars.next().expect("a"), chars.next().expect("b"));
+            assert!(is_hot_pair(a, b), "{pair} is in the table and is not frequent");
+        }
+        // Shipped, or the engine has no table to read.
+        let shipped: serde_json::Value =
+            serde_json::from_str(&ChallengeConfig::for_process().to_env_value()).expect("config");
+        let hot = shipped["key_layout"]["hot"].as_array().expect("shipped pairs");
+        assert_eq!(hot.len(), pairs.len());
     }
 
     #[test]

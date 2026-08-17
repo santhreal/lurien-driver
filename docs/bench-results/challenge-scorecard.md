@@ -196,3 +196,36 @@ then answer somewhere a field poller never looks:
   whole instead of split on `.` turned phase two red; and a driver that waits a
   fixed 25 s for a verdict instead of the budgets it granted reported the refused
   page as `none` and exited zero, which turned phase three red.
+
+The `typing` fixture rules out an answer typed the way a machine types. It is a
+proof-of-work page that also measures how its answer arrived, and it refuses one
+whose keys were never held or whose gaps hold one rate:
+
+- Every `keydown` and `keyup` must be trusted, and there must be as many of each as
+  the response has characters, so an assigned value or a paste is refused.
+- A key must be down for at least 8 ms and the holds must span at least 4 ms, which
+  is what a keydown followed by an immediate keyup cannot do.
+- No gap between keys may be under 100 ms, and the gaps must carry a coefficient of
+  variation of at least 0.05. One constant rate plus timer jitter lands near 0.01.
+- The verdict is taken on `keyup`, not on `input`: an input event fires while the
+  last key is still down, so a page that judges there is one hold short of the
+  characters it received.
+- The second phase ships one explicit plan, gap 60 and no hold, which is the shape
+  before this model existed, and requires a refusal. The third ships a two-entry deck
+  whose gap is one number twice and whose holds differ by 6 ms: every structural gate
+  passes and only the dispersion of the gaps refuses it.
+- Measured on 2026-08-17 against engine 150.0.2-beta.25 and driver 0.1.0: 4 hex
+  zeros typed and accepted in 10933 ms, holds of 51 to 80 ms and gaps of 300 to
+  397 ms with a coefficient of variation of 0.099; the constant cadence and the
+  constant rate were both refused.
+- Four mutations were checked. A child that releases the key in the same instant it
+  pressed it turned phase one red; one dealt entry per field rather than per
+  keystroke turned phase one red; a parent that sends no plan was refused with `the
+  parent planned 0 keystrokes for 5 characters`; and reusing one event object for
+  both halves of a keystroke turned phase one red, because the text input processor
+  carries that object's creation time onto both and the page measures a hold of zero.
+
+The interval distribution itself is a driver claim, not a page claim: four to six
+keystrokes is too small a sample to hold a distribution to, so the page gates
+structurally and `lurien/src/challenge.rs` asserts the deck's own dispersion, the
+ordering of its gap classes, and that its frequent-pair table is the model's.

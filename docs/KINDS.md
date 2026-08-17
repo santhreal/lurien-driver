@@ -18,6 +18,11 @@ chrome-visible signals to a closed kind.
 
 Unknown kind fails closed. A kind with no fixture is a red test.
 
+A kind whose answer is a string types it, and typing is timed. `Keys.sys.mjs` plans
+a gap per pair of keys and a hold per key from the deck the session shipped, so
+`pow`, `visual` and `audio` all reach a field through the same rhythm. A primitive
+that assigns `value` instead is a solve a page can measure and reject.
+
 ## Add a vendor
 
 1. Copy `captcha/kinds/_schema.toml` fields into `captcha/kinds/<vendor>.toml`.
