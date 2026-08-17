@@ -64,6 +64,50 @@
 - `guise::human::scroll::HumanScroller::plan` returns the wheel session as data
   (`ScrollStep`), so the browser dispatches a cadence guise owns instead of a
   second scroll signature written next to it.
+- One selector language for every verb that touches an element: CSS, or the
+  semantic forms `role:`, `text:`, `label:`, `placeholder:`, `testid:`. A
+  semantic form must fit exactly one visible, enabled element and is otherwise
+  refused with the candidates named; CSS keeps its first-match contract.
+  Resolution answers with a CSS path and mutates nothing in the page.
+- Acts wait for their element instead of failing on a page that has not finished
+  laying out. The deadline is 10 s, `LURIEN_TIMEOUT_MS` per session, `timeout_ms`
+  per call; an invalid selector, an unknown form and an ambiguous description
+  fail at once, since waiting cannot change them. `count` never waits.
+- An unresolved selector reports what was asked, what the page had, how long it
+  was given, and what to do next, listing up to eight elements on screen by role
+  and accessible name.
+- An element parked off the canvas (`left: -9999px`) is not visible, so it is
+  refused rather than clicked at a coordinate outside the viewport. An element
+  below the fold stays visible.
+- `snapshot` reports the page as an addressable node list by default: role, name,
+  state and one handle per node, in document order, capped at 200 nodes with the
+  remainder counted rather than hidden. `format=text` and `format=source` keep the
+  old representations. Page source cost an agent tokens on markup it could not
+  act on and changed on every redesign.
+- A snapshot handle is a selector: `ref:e7` acts on the node that line described.
+  The handle table lives in the driver, so the page is never tagged, and a handle
+  is checked against the role and name it was captured with before it is used. A
+  page that re-rendered under a handle earns a refusal naming what changed rather
+  than a click on whatever moved into place.
+- An HTTP client's `ref` argument resolves. It used to become
+  `[data-lurien-ref="7"]`, an attribute nothing in the product wrote, so every
+  ref-based call silently matched nothing; `element:7` now means `ref:e7`.
+- `batch` runs several verbs in one call and stops at the first failure. Steps
+  are parsed and type-checked against their verbs' specs before the first one
+  runs, so a typo in step five does not leave the page half filled in, and the
+  failure names the step, the verb, what already ran and how many steps were
+  skipped. Identical on the CLI, MCP and `lurien serve`.
+- HTTP arguments accept a JSON array, not only a string, so `steps` and `files`
+  arrive as lists. A string still works and still means what it meant.
+- The HTTP face no longer names the verb twice in an error that already opens
+  with it.
+- Every error class names a corrective action, not only what broke: a chmod for a
+  non-executable engine, the persona to use instead of a cross-OS one, the log to
+  read after a crash, the scorecard to check for an unclaimed kind. A test builds
+  one instance of every variant and fails on a message that only diagnoses, and
+  adding a variant stops that test compiling until it is listed.
+- `hard captcha` names the kind it refused, which the message previously captured
+  and dropped.
 - A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
   `drag_profile` and `prelude` when it names none. Without this the engine fell
   back to a built-in constant, so every session moved identically.

@@ -185,7 +185,11 @@ pub fn markdown(registry: &[&VerbSpec]) -> String {
     let mut out = String::from(
         "# Verbs\n\nGenerated from the registry by `cargo test -p lurien-driver verbs_doc`. \
          Do not edit by hand.\n\nEvery verb is reachable identically from the `lurien` CLI, \
-         `lurien-mcp`, and `lurien serve`: one spec, three transports.\n",
+         `lurien-mcp`, and `lurien serve`: one spec, three transports.\n\nA `selector` \
+         argument accepts a CSS selector or one of the semantic forms in \
+         [`SELECTORS.md`](SELECTORS.md). Verbs that act wait for the element; \
+         `timeout_ms` bounds that wait.\n\n`batch` runs several of these verbs in one \
+         call; its step syntax is in [`BATCH.md`](BATCH.md).\n",
     );
     for domain in Domain::all() {
         let verbs: Vec<&&VerbSpec> = registry.iter().filter(|s| s.domain == *domain).collect();

@@ -15,7 +15,7 @@ use guise::human::keystroke::{
     COLD_BIGRAM_GAP_MAX_MS, COLD_BIGRAM_GAP_MIN_MS,
 };
 use guise::rotation::all_profiles;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 
 // ── ProfileOverrides coherence: all the ways validate_overrides must reject ──
 

@@ -11,8 +11,9 @@ pub static SPEC: VerbSpec = VerbSpec {
     domain: Domain::Dom,
     summary: "Attach files to a file input.",
     args: &[
-        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS selector of the file input." },
+        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS, or role:/text:/label:/placeholder:/testid: form." },
         ArgSpec { name: "files", ty: ArgType::StrList, required: true, default: None, help: "Absolute local paths." },
+        crate::verb::TIMEOUT_ARG,
     ],
     output: OutputKind::Text,
     stability: Stability::Stable,
@@ -32,11 +33,14 @@ async fn run(session: &Session, args: &Args) -> Result<Output, Error> {
         }
     }
     let count = files.len();
-    session
-        .browser()
-        .await?
+    let timeout_ms = crate::verb::timeout_ms(args);
+    let browser = session.browser().await?;
+    // A file input is often visually replaced by a styled button, so presence is
+    // the requirement here, not visibility.
+    let found = browser.locate_present(selector, timeout_ms).await?;
+    browser
         .page()
-        .set_files(selector, files)
+        .set_files(&found.css, files)
         .await
         .map_err(|e| Error::Other(format!("upload {selector}: {e}")))?;
     Ok(Output::Text(format!("attached {count} file(s) to {selector}")))

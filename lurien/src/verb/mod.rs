@@ -17,6 +17,7 @@ pub mod observe;
 pub mod page;
 pub mod profile;
 pub mod schema;
+pub mod session;
 pub mod state;
 pub mod storage;
 
@@ -53,8 +54,10 @@ pub enum Domain {
     Observe,
     /// Persona and real-profile import.
     Profile,
-    /// Browser context lifecycle: list, create, switch, close.
+    /// Browsing-context lifecycle: list, create, switch, close.
     Context,
+    /// Sequences of verbs: work about the calls rather than about the page.
+    Session,
     /// Request/response interception and header manipulation.
     Intercept,
 }
@@ -75,6 +78,7 @@ impl Domain {
             Self::Observe => "observe",
             Self::Profile => "profile",
             Self::Context => "context",
+            Self::Session => "session",
             Self::Intercept => "intercept",
         }
     }
@@ -94,6 +98,7 @@ impl Domain {
             Self::Observe,
             Self::Profile,
             Self::Context,
+            Self::Session,
             Self::Intercept,
         ]
     }
@@ -165,6 +170,24 @@ pub struct ArgSpec {
     pub default: Option<&'static str>,
     /// One line. Ends without a period only if it is a fragment.
     pub help: &'static str,
+}
+
+/// The deadline argument every verb that resolves an element accepts.
+///
+/// One spec rather than one per verb, so the name, the type and the help line
+/// cannot drift between `click` and `fill`.
+pub const TIMEOUT_ARG: ArgSpec = ArgSpec {
+    name: "timeout_ms",
+    ty: ArgType::Int,
+    required: false,
+    default: None,
+    help: "Deadline for resolving the element. Default 10000, or LURIEN_TIMEOUT_MS.",
+};
+
+/// The deadline this call asked for, or the session default.
+#[must_use]
+pub fn timeout_ms(args: &Args) -> u64 {
+    args.u64("timeout_ms", crate::locator::default_timeout_ms())
 }
 
 /// Shape a verb returns. Faces render it; a verb never formats for a face.
@@ -291,6 +314,7 @@ const DOMAIN_SPECS: &[&[&VerbSpec]] = &[
     observe::SPECS,
     profile::SPECS,
     context::SPECS,
+    session::SPECS,
     intercept::SPECS,
 ];
 /// Every verb, sorted by canonical name.

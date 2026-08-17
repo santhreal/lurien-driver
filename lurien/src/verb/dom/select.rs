@@ -9,10 +9,11 @@ pub static SPEC: VerbSpec = VerbSpec {
     name: "select",
     aliases: &["dom.select"],
     domain: Domain::Dom,
-    summary: "Select an option by value in a select element.",
+    summary: "Select an option by value, waiting for the control to be actionable.",
     args: &[
-        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS selector of the select element." },
+        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS, or role:/text:/label:/placeholder:/testid: form." },
         ArgSpec { name: "value", ty: ArgType::Str, required: true, default: None, help: "Option value to choose." },
+        crate::verb::TIMEOUT_ARG,
     ],
     output: OutputKind::Text,
     stability: Stability::Stable,
@@ -26,12 +27,14 @@ fn call<'a>(session: &'a Session, args: &'a Args) -> VerbFuture<'a> {
 async fn run(session: &Session, args: &Args) -> Result<Output, Error> {
     let selector = args.str("selector")?;
     let value = args.str("value")?;
+    let timeout_ms = crate::verb::timeout_ms(args);
     let browser = session.browser().await?;
+    let found = browser.locate(selector, timeout_ms).await?;
     let js = format!(
         "(() => {{ const el = document.querySelector({sel}); if (!el) return 'missing'; \
          el.value = {val}; el.dispatchEvent(new Event('input', {{bubbles:true}})); \
          el.dispatchEvent(new Event('change', {{bubbles:true}})); return el.value; }})()",
-        sel = js_string(selector),
+        sel = js_string(&found.css),
         val = js_string(value),
     );
     let got = browser

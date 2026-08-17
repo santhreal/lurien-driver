@@ -72,6 +72,19 @@ jobs:
       - name: worker digest matches a reference implementation
         run: node lurien/tests/pow_sha256.mjs
 
+  resolver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `locator.js` and `snapshot.js` are evaluated in the page by every verb
+      # that touches an element, so a syntax error there breaks every act at
+      # runtime and no Rust test sees it: the string only fails when a browser
+      # parses it.
+      - name: the page scripts parse
+        run: |
+          node --check lurien/src/locator.js
+          node --check lurien/src/snapshot.js
+
   slider-measurement:
     runs-on: ubuntu-latest
     steps:

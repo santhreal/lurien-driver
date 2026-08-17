@@ -4,6 +4,10 @@ Generated from the registry by `cargo test -p lurien-driver verbs_doc`. Do not e
 
 Every verb is reachable identically from the `lurien` CLI, `lurien-mcp`, and `lurien serve`: one spec, three transports.
 
+A `selector` argument accepts a CSS selector or one of the semantic forms in [`SELECTORS.md`](SELECTORS.md). Verbs that act wait for the element; `timeout_ms` bounds that wait.
+
+`batch` runs several of these verbs in one call; its step syntax is in [`BATCH.md`](BATCH.md).
+
 ## page
 
 | Verb | Arguments | Output | Stability | Summary |
@@ -13,7 +17,7 @@ Every verb is reachable identically from the `lurien` CLI, `lurien-mcp`, and `lu
 | `goto` | `url` | json | stable | Navigate. Captcha is automatic (score-class only in v1). No challenge tool. |
 | `reload` | - | none | stable | Reload the active document. |
 | `screenshot` | `path?` | png | stable | Capture a viewport PNG. Writes the file when path is given. |
-| `snapshot` | - | text | stable | Title, URL, and a short text snapshot of the page. |
+| `snapshot` | `format?`, `limit?` | text | stable | The page as roles, names and handles. Handles act as `ref:eN` selectors. |
 | `stop` | - | text | stable | Stop loading the active document. |
 | `title` | - | text | stable | Document title of the active browsing context. |
 | `url` | - | text | stable | Current document URL. |
@@ -23,13 +27,13 @@ Every verb is reachable identically from the `lurien` CLI, `lurien-mcp`, and `lu
 
 | Verb | Arguments | Output | Stability | Summary |
 |---|---|---|---|---|
-| `click` | `selector` | text | stable | Click the first element matching selector. |
-| `count` | `selector` | json | stable | Number of elements matching selector. |
-| `fill` | `selector`, `text` | text | stable | Focus selector and type text. |
-| `select` | `selector`, `value` | text | stable | Select an option by value in a select element. |
-| `text` | `selector` | text | stable | Visible text of the first match. |
+| `click` | `selector`, `timeout_ms?` | text | stable | Click an element, waiting for it to be actionable. |
+| `count` | `selector` | json | stable | Number of elements matching a selector, total and visible. |
+| `fill` | `selector`, `text`, `timeout_ms?` | text | stable | Focus a field and type text, waiting for it to be actionable. |
+| `select` | `selector`, `value`, `timeout_ms?` | text | stable | Select an option by value, waiting for the control to be actionable. |
+| `text` | `selector`, `timeout_ms?` | text | stable | Visible text of an element, waiting for it to appear. |
 | `type` | `text` | text | stable | Type text into the focused element. |
-| `upload` | `selector`, `files` | text | stable | Attach files to a file input. |
+| `upload` | `selector`, `files`, `timeout_ms?` | text | stable | Attach files to a file input. |
 
 ## input
 
@@ -103,6 +107,12 @@ Every verb is reachable identically from the `lurien` CLI, `lurien-mcp`, and `lu
 | `contexts` | - | json | stable | List active browser contexts (sessions). |
 | `new-context` | `url?` | text | stable | Create a new browser context. Navigates to url if given. |
 | `switch-context` | `context_id` | text | stable | Switch to a browser context by id. |
+
+## session
+
+| Verb | Arguments | Output | Stability | Summary |
+|---|---|---|---|---|
+| `batch` | `steps` | json | stable | Run several verbs in one call, stopping at the first failure. |
 
 ## intercept
 

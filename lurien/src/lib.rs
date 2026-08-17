@@ -27,11 +27,13 @@ pub mod challenge;
 pub mod error;
 pub mod goto;
 pub mod launch;
+pub mod locator;
 pub mod mcp;
 pub mod profile_import;
 pub mod resolve;
 pub mod serve;
 pub mod session;
+pub mod snapshot;
 pub mod verb;
 pub mod version;
 
@@ -44,6 +46,8 @@ pub use error::Error;
 pub use challenge::{ChallengeConfig, EngineOutcome};
 pub use goto::{ChallengeKind, GotoOutcome};
 pub use launch::LaunchOptions as BrowserLaunchOptions;
+pub use locator::{Form, Resolved};
+pub use snapshot::{Node, Snapshot};
 pub use profile_import::{import_profile, ImportReport};
 pub use resolve::{resolve_engine, resolve_engine_checked};
 pub use session::Session;
@@ -53,21 +57,21 @@ pub use version::{crate_version, engine_version_string, version_line};
 /// Public face. Wraps a lurien-engine [`Page`].
 pub struct Browser {
     page: Page,
+    /// Handles from the last snapshot. A handle is a promise about one node, so
+    /// the table lives here rather than in the page: tagging the DOM to mark a
+    /// match would be visible to page script.
+    handles: std::sync::Mutex<Option<Snapshot>>,
 }
 
 impl Browser {
     /// Launch wearing `profile`. Engine required. Default headful.
     pub async fn launch(profile: StealthProfile) -> Result<Self, Error> {
-        Ok(Self {
-            page: launch::launch(profile).await?,
-        })
+        Ok(Self::wrap(launch::launch(profile).await?))
     }
 
     /// Launch with explicit options.
     pub async fn launch_with_options(opts: LaunchOptions) -> Result<Self, Error> {
-        Ok(Self {
-            page: launch::launch_with_options(opts).await?,
-        })
+        Ok(Self::wrap(launch::launch_with_options(opts).await?))
     }
 
     /// Import a real Firefox profile, then launch wearing it.
@@ -78,7 +82,14 @@ impl Browser {
         headless: bool,
     ) -> Result<(Self, ImportReport), Error> {
         let (page, report) = as_profile::as_profile(src, dest, profile, headless, None).await?;
-        Ok((Self { page }, report))
+        Ok((Self::wrap(page), report))
+    }
+
+    fn wrap(page: Page) -> Self {
+        Self {
+            page,
+            handles: std::sync::Mutex::new(None),
+        }
     }
 
     /// Navigate. Captcha is classified here. No `auto_solve`.
@@ -110,11 +121,70 @@ impl Browser {
             .map_err(|e| Error::Other(e.to_string()))
     }
 
-    /// Click the first match of `selector`.
+    /// Resolve `selector`, waiting for an element ready to be acted on.
+    ///
+    /// Every verb that touches an element goes through this, so `role:`, `text:`,
+    /// `label:`, `placeholder:`, `testid:` and a snapshot handle (`ref:e3`) work
+    /// everywhere a CSS selector does and an element that arrives late is waited
+    /// for rather than missed.
+    pub async fn locate(&self, selector: &str, timeout_ms: u64) -> Result<Resolved, Error> {
+        let selector = self.deref_handle(selector).await?;
+        locator::resolve(&self.page, &selector, timeout_ms).await
+    }
+
+    /// Resolve `selector` for a read: present is enough, visible is not required.
+    pub async fn locate_present(
+        &self,
+        selector: &str,
+        timeout_ms: u64,
+    ) -> Result<Resolved, Error> {
+        let selector = self.deref_handle(selector).await?;
+        locator::resolve_present(&self.page, &selector, timeout_ms).await
+    }
+
+    /// Turn a snapshot handle into the CSS path it stands for, once its node is
+    /// confirmed to still be the node the handle was captured for.
+    ///
+    /// Anything that is not a handle is returned untouched, so this costs a
+    /// prefix check for every other selector.
+    async fn deref_handle(&self, selector: &str) -> Result<String, Error> {
+        let Some(handle) = selector.strip_prefix("ref:") else {
+            return Ok(selector.to_string());
+        };
+        let known = {
+            let table = self.handles.lock().map_err(|_| poisoned())?;
+            match table.as_ref() {
+                None => {
+                    return Err(Error::Unresolved {
+                        selector: selector.to_string(),
+                        detail: "no snapshot has been taken in this session".to_string(),
+                        waited_ms: 0,
+                        action: "call `snapshot` first, then use a handle it reports".to_string(),
+                    })
+                }
+                Some(snap) => snap.node(handle).cloned().ok_or_else(|| Error::Unresolved {
+                    selector: selector.to_string(),
+                    detail: format!("no such handle in the last snapshot ({})", snap.handles()),
+                    waited_ms: 0,
+                    action: "take a fresh snapshot and use the handle it reports".to_string(),
+                })?,
+            }
+        };
+        snapshot::verify(&self.page, &known).await?;
+        Ok(known.path)
+    }
+
+    /// Click the first match of `selector`, waiting for it to be actionable.
     pub async fn click(&self, selector: &str) -> Result<(), Error> {
+        self.click_within(selector, locator::default_timeout_ms()).await
+    }
+
+    /// Click, with the caller's own deadline.
+    pub async fn click_within(&self, selector: &str, timeout_ms: u64) -> Result<(), Error> {
+        let found = self.locate(selector, timeout_ms).await?;
         let el = self
             .page
-            .find_element(selector)
+            .find_element(&found.css)
             .await
             .map_err(|e| Error::Other(e.to_string()))?;
         el.click().await.map_err(|e| Error::Other(e.to_string()))
@@ -128,11 +198,22 @@ impl Browser {
             .map_err(|e| Error::Other(e.to_string()))
     }
 
-    /// Focus `selector` and type `text`.
+    /// Focus `selector` and type `text`, waiting for the field to be actionable.
     pub async fn fill(&self, selector: &str, text: &str) -> Result<(), Error> {
+        self.fill_within(selector, text, locator::default_timeout_ms()).await
+    }
+
+    /// Fill, with the caller's own deadline.
+    pub async fn fill_within(
+        &self,
+        selector: &str,
+        text: &str,
+        timeout_ms: u64,
+    ) -> Result<(), Error> {
+        let found = self.locate(selector, timeout_ms).await?;
         let el = self
             .page
-            .find_element(selector)
+            .find_element(&found.css)
             .await
             .map_err(|e| Error::Other(e.to_string()))?;
         el.click().await.map_err(|e| Error::Other(e.to_string()))?;
@@ -163,8 +244,20 @@ impl Browser {
             .map_err(|e| Error::Other(e.to_string()))
     }
 
-    /// Title + URL + a short text snapshot (Playwright-MCP `snapshot`).
-    pub async fn snapshot(&self) -> Result<String, Error> {
+    /// The page as an addressable node list, and the handle table behind it.
+    ///
+    /// This is the representation an agent should act from: roles, names, states
+    /// and one handle per node. Every handle stays usable as `ref:eN` until the
+    /// next snapshot replaces the table or the node it names changes.
+    pub async fn snapshot(&self, limit: usize) -> Result<Snapshot, Error> {
+        let snap = snapshot::capture(&self.page, limit).await?;
+        *self.handles.lock().map_err(|_| poisoned())? = Some(snap.clone());
+        Ok(snap)
+    }
+
+    /// Title, URL and the page's visible text, for when the node list is not
+    /// what the caller is after.
+    pub async fn snapshot_text(&self) -> Result<String, Error> {
         let title = self
             .page
             .title()
@@ -181,6 +274,16 @@ impl Browser {
         Ok(format!("title: {title}\nurl: {url}\n\n{body}"))
     }
 
+    /// The document's serialized markup, on request.
+    pub async fn source(&self) -> Result<String, Error> {
+        self.page
+            .evaluate("document.documentElement.outerHTML")
+            .await
+            .map_err(|e| Error::Other(e.to_string()))?
+            .into_value()
+            .map_err(|e| Error::Other(e.to_string()))
+    }
+
     /// Borrow the underlying BiDi page.
     #[must_use]
     pub fn page(&self) -> &Page {
@@ -194,4 +297,10 @@ impl Browser {
             .await
             .map_err(|e| Error::Other(e.to_string()))
     }
+}
+
+/// A poisoned handle table means a panic already happened elsewhere. Reporting it
+/// is honest; unwrapping would turn one panic into two.
+fn poisoned() -> Error {
+    Error::Other("the handle table was left poisoned by an earlier panic".to_string())
 }

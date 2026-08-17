@@ -42,6 +42,9 @@ Scanners keep `guise-*` crate names. They do not import `lurien` or `foxdriver`.
 | `src/verb/args.rs` | decoding | The only argument decoder. Unknown argument, missing required, wrong type all fail closed here. |
 | `src/verb/schema.rs` | generators | One spec becomes a JSON Schema, a clap command, an HTTP decode, and the `docs/VERBS.md` row. |
 | `src/session.rs` | the API | `Session::call(verb, args)` is the only entry point any face may use. |
+| `src/locator.rs`, `src/locator.js` | selectors and the wait | The only place that decides what a `selector` means and how long an act waits for it. `locator.js` is evaluated in the page, mutates nothing, and answers with a CSS path, so acting goes through the ordinary element path. Reference: `docs/SELECTORS.md`. |
+| `src/snapshot.rs`, `src/snapshot.js` | the page an agent acts from | Walks the page into role/name/handle nodes and owns the handle table. Nothing is tagged in the page; a handle is checked against the role and name it was captured with before it acts. |
+| `src/verb/session/batch.rs` | one call, several verbs | Parses and type-checks every step against its verb's spec before running any, then calls `Session::call` in order and stops at the first failure. Reference: `docs/BATCH.md`. |
 | `src/mcp.rs`, `src/serve.rs`, `bins/lurien.rs` | faces | Transports. They read the registry; they never match on a verb name and never import `verb::<domain>::`. `serve.rs` also owns the legacy wire names, and each maps onto a verb rather than reimplementing one. |
 | `src/launch.rs`, `resolve.rs`, `goto.rs` | launch contract | Engine required, missing binary is `Err`, captcha is a property of `goto`. |
 | `build.rs`, `src/catalog.rs` | vendor catalog | `build.rs` compiles `captcha/kinds/*.toml` into a table; `catalog.rs` turns it into probe selectors and token hooks, addressed by kind only. No Rust source names a vendor, and a test proves it. |
@@ -95,6 +98,8 @@ CI (`.github/workflows/ci.yml`):
 - `cargo test -p lurien-vision` measures a crop the browser rendered, so the
   slider arithmetic is pinned against a real snapshot and not only synthetic
   images.
+- `node --check` on `lurien/src/locator.js` and `lurien/src/snapshot.js`: both are
+  strings until a browser parses them, so their syntax is gated on its own.
 
 The vendor-name grep over `engine/additions/challenge/` runs in the engine
 repository, which owns that directory. `cargo test -p lurien-driver --test

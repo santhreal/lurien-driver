@@ -40,6 +40,46 @@ lurien serve                        # HTTP, many named sessions
 
 Verb reference: [`docs/VERBS.md`](docs/VERBS.md), generated from the registry.
 
+## Selectors
+
+A `selector` is a CSS selector or one of five semantic forms:
+
+```
+lurien click 'role:button=Log in'
+lurien click 'text:Continue to checkout'
+lurien fill 'label:Email' me@example.com
+lurien click 'placeholder:you@example.com'
+lurien click 'testid:submit'
+```
+
+A verb that acts waits for its element, so a button the page adds after the
+navigation needs no explicit wait. A semantic form that fits two visible buttons
+is refused with both named, rather than pressing the first one. When nothing
+matches, the error lists what is on screen.
+
+`snapshot` reports the page as roles, names and handles rather than source, and a
+handle acts:
+
+```
+- button "Log in" [ref=e2]
+```
+
+```
+lurien click ref:e2
+```
+
+Reference: [`docs/SELECTORS.md`](docs/SELECTORS.md).
+
+Several verbs in one call, stopping at the first failure:
+
+```
+lurien batch "goto url=https://example.com/login" \
+             "fill selector=label:Email text=me@example.com" \
+             'click selector="role:button=Log in"'
+```
+
+Reference: [`docs/BATCH.md`](docs/BATCH.md).
+
 ## Challenges
 
 Classification and clearing happen inside the engine, in the browsing context
@@ -79,6 +119,8 @@ engine itself is a separate repository (a Gecko fork, MPL) and is not vendored
 here.
 
 Plan: [`docs/PLAN.md`](docs/PLAN.md).
+Selectors and the wait: [`docs/SELECTORS.md`](docs/SELECTORS.md).
+Several verbs in one call: [`docs/BATCH.md`](docs/BATCH.md).
 How to add a vendor or a kind: [`docs/KINDS.md`](docs/KINDS.md).
 Who may import whom: [`docs/TREE.md`](docs/TREE.md).
 Build / rebase: [`docs/ENGINE.md`](docs/ENGINE.md), [`docs/REBASE.md`](docs/REBASE.md).

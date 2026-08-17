@@ -1,4 +1,4 @@
-//! Read visible text of a selector.
+//! Read visible text, once the element exists.
 
 use crate::error::Error;
 use crate::session::Session;
@@ -9,9 +9,10 @@ pub static SPEC: VerbSpec = VerbSpec {
     name: "text",
     aliases: &["dom.text"],
     domain: Domain::Dom,
-    summary: "Visible text of the first match.",
+    summary: "Visible text of an element, waiting for it to appear.",
     args: &[
-        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS selector." },
+        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS, or role:/text:/label:/placeholder:/testid: form." },
+        crate::verb::TIMEOUT_ARG,
     ],
     output: OutputKind::Text,
     stability: Stability::Stable,
@@ -24,10 +25,15 @@ fn call<'a>(session: &'a Session, args: &'a Args) -> VerbFuture<'a> {
 
 async fn run(session: &Session, args: &Args) -> Result<Output, Error> {
     let selector = args.str("selector")?;
+    let timeout_ms = crate::verb::timeout_ms(args);
     let browser = session.browser().await?;
+    // A read is satisfied by an element that is present. A hidden element still
+    // has text, and refusing to read it would make `text` less useful than the
+    // DOM it reports on.
+    let found = browser.locate_present(selector, timeout_ms).await?;
     let js = format!(
         "(() => {{ const el = document.querySelector({sel}); return el ? (el.innerText || el.textContent || '') : ''; }})()",
-        sel = serde_json::Value::String(selector.to_string())
+        sel = serde_json::Value::String(found.css.clone())
     );
     let text = browser
         .page()

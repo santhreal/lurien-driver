@@ -70,20 +70,36 @@ pub struct Command {
     /// Explicit proxy URL, or `caido`.
     #[serde(default)]
     pub proxy_url: Option<String>,
-    /// Verb arguments, as strings. Decoded against the verb spec.
+    /// Verb arguments. A string is the historical shape and still works; a JSON
+    /// array is accepted too, so a client can send a list without encoding it as
+    /// text. Decoded against the verb spec.
     #[serde(default)]
-    pub args: Option<HashMap<String, String>>,
+    pub args: Option<HashMap<String, Value>>,
 }
 
 impl Command {
-    /// One argument, trimmed, absent when empty.
+    /// One argument, trimmed, absent when empty or not a string.
     #[must_use]
     pub fn arg(&self, key: &str) -> Option<&str> {
         self.args
             .as_ref()?
             .get(key)
-            .map(|v| v.trim())
+            .and_then(Value::as_str)
+            .map(str::trim)
             .filter(|v| !v.is_empty())
+    }
+
+    /// A list argument as a client naturally sends it: a JSON array of strings.
+    #[must_use]
+    pub fn arg_array(&self, key: &str) -> Option<Vec<String>> {
+        let items = self.args.as_ref()?.get(key)?.as_array()?;
+        let list: Vec<String> = items
+            .iter()
+            .filter_map(|item| item.as_str())
+            .map(|item| item.trim().to_string())
+            .filter(|item| !item.is_empty())
+            .collect();
+        (!list.is_empty()).then_some(list)
     }
 
     /// First present argument among `keys`. Legacy clients spell the same thing
@@ -267,8 +283,39 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             "goto"
         }
         "get_url" => "url",
+        // Steps arrive as a JSON array, or as one step per line for a client that
+        // can only send strings. Both reach the verb the CLI and MCP call, so the
+        // three faces run identical batches.
+        "batch" | "dom_batch" => {
+            let steps: Vec<String> = match command.arg_array("steps") {
+                Some(list) => list,
+                None => {
+                    let raw = command.arg("steps").ok_or("steps is required")?;
+                    if raw.starts_with('[') {
+                        serde_json::from_str(raw)
+                            .map_err(|e| format!("steps is not a JSON array of strings: {e}"))?
+                    } else {
+                        raw.lines()
+                            .map(str::trim)
+                            .filter(|line| !line.is_empty())
+                            .map(str::to_string)
+                            .collect()
+                    }
+                }
+            };
+            if steps.is_empty() {
+                return Err("steps is required".to_string());
+            }
+            args.set("steps", steps);
+            "batch"
+        }
         "dom_snapshot" | "dom_query" => "snapshot",
-        "dom_extract" | "get_html" => "snapshot",
+        // These meant markup before the snapshot became a node list, so they
+        // keep meaning markup.
+        "dom_extract" | "get_html" => {
+            args.set("format", "source");
+            "snapshot"
+        }
         "dom_click" => {
             let selector = selector_of(command)?;
             match command.arg("frame") {
@@ -312,12 +359,17 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         }
         "dom_upload" => {
             args.set("selector", selector_of(command)?);
-            args.set(
-                "files",
-                command
-                    .any_arg(&["path", "file", "filepath"])
-                    .ok_or("path is required for dom_upload")?,
-            );
+            // A file input takes several files, so an array is the natural shape;
+            // one path as a string is what older clients send.
+            match command.arg_array("files").or_else(|| command.arg_array("paths")) {
+                Some(files) => args.set("files", files),
+                None => args.set(
+                    "files",
+                    command
+                        .any_arg(&["path", "file", "filepath", "files"])
+                        .ok_or("path is required for dom_upload")?,
+                ),
+            };
             "upload"
         }
         "dom_key" => {
@@ -417,7 +469,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         "dom_reload" => "reload",
         "dom_stop" => "stop",
         "dom_get_title" => "title",
-        "dom_get_source" => "snapshot",
+        "dom_get_source" => {
+            args.set("format", "source");
+            "snapshot"
+        }
         // Network log aliases.
         "dom_network_log" | "dom_network" => {
             if let Some(limit) = command.arg("limit") {
@@ -739,12 +794,21 @@ fn selector_of(command: &Command) -> Result<String, String> {
         .ok_or_else(|| "selector or ref is required".to_string())
 }
 
-/// `element:<n>` and `#id` refs from a snapshot become a CSS selector; anything
-/// else is already one.
+/// A `ref` from a snapshot becomes a handle selector; anything else is already a
+/// selector.
+///
+/// This used to build `[data-lurien-ref="n"]`, an attribute nothing ever wrote,
+/// so every client that sent a `ref` got a selector that could not match.
+/// Handles are real now, and `element:3` from an older client means `ref:e3`.
 fn selector_from_ref(reference: &str) -> String {
-    match reference.split_once(':') {
-        Some(("element" | "ref", rest)) => format!("[data-lurien-ref=\"{}\"]", rest.trim()),
-        _ => reference.to_string(),
+    let Some(("element" | "ref", rest)) = reference.split_once(':') else {
+        return reference.to_string();
+    };
+    let rest = rest.trim();
+    if rest.chars().all(|c| c.is_ascii_digit()) && !rest.is_empty() {
+        format!("ref:e{rest}")
+    } else {
+        format!("ref:{rest}")
     }
 }
 
@@ -1009,7 +1073,17 @@ async fn run_verb(command: &Command, registry: &Registry) -> Reply {
     };
     let output = match session.call(verb, &args).await {
         Ok(output) => output,
-        Err(err) => return Reply::err(format!("{verb}: {err}")),
+        Err(err) => {
+            // The verb is named so a client can map its legacy command onto one,
+            // but an error that already opens with the verb should not say it
+            // twice.
+            let text = err.to_string();
+            return Reply::err(if text.starts_with(verb) {
+                text
+            } else {
+                format!("{verb}: {text}")
+            });
+        }
     };
     let mut reply = Reply::ok(command, session.current_url().await);
     reply.output = output.to_text();

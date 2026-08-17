@@ -100,11 +100,13 @@ const LEGACY_COMMANDS: &[&str] = &[
     "dom_set_style",
     "dom_mutation_observer",
     "dom_clear_mutation_observer",
+    "batch",
+    "dom_batch",
 ];
 
 /// Arguments rich enough for any legacy command to translate. Extra keys are
 /// ignored by translation, so one table serves every command.
-fn sample_args() -> HashMap<String, String> {
+fn sample_args() -> HashMap<String, Value> {
     HashMap::from(
         [
             ("url", "https://example.test/"),
@@ -124,6 +126,7 @@ fn sample_args() -> HashMap<String, String> {
             ("action", "accept"),
             ("snapshot", "{\"version\":1}"),
             ("ms", "50"),
+            ("steps", "wait ms=1\ntitle"),
             ("context_id", "ctx-2"),
             ("user_agent", "TestAgent/1.0"),
             ("width", "1280"),
@@ -146,7 +149,7 @@ fn sample_args() -> HashMap<String, String> {
             ("download_url", "https://example.test/file"),
             ("checked", "true"),
         ]
-        .map(|(k, v)| (k.to_string(), v.to_string())),
+        .map(|(k, v)| (k.to_string(), Value::from(v))),
     )
 }
 
@@ -210,7 +213,7 @@ fn frame_scope_selects_the_frame_verb() {
     cmd.args
         .as_mut()
         .expect("args")
-        .insert("frame".to_string(), "1".to_string());
+        .insert("frame".to_string(), Value::from("1"));
     let (target, args) = serve::translate(&cmd).expect("translates");
     assert_eq!(target, "click-in");
     assert_eq!(args.opt_str("frame"), Some("1"));
@@ -219,16 +222,74 @@ fn frame_scope_selects_the_frame_verb() {
     assert_eq!(plain, "click");
 }
 
+/// A `ref` names a node from a snapshot. It used to become
+/// `[data-lurien-ref="7"]`, an attribute nothing in the product ever wrote, so
+/// every client that sent a ref got a selector that could not match. A handle is
+/// the real address now, and both spellings a client may send reach it.
 #[test]
-fn an_element_ref_becomes_a_selector() {
-    let mut cmd = command("dom_click");
+fn an_element_ref_becomes_a_snapshot_handle() {
+    for (sent, expected) in [
+        ("element:7", "ref:e7"),
+        ("ref:7", "ref:e7"),
+        ("ref:e7", "ref:e7"),
+        ("#login", "#login"),
+    ] {
+        let mut cmd = command("dom_click");
+        let args = cmd.args.as_mut().expect("args");
+        args.remove("selector");
+        args.insert("ref".to_string(), Value::from(sent));
+        let (_, decoded) = serve::translate(&cmd).expect("translates");
+        let selector = decoded.opt_str("selector").unwrap_or_default();
+        assert_eq!(selector, expected, "{sent} became {selector}");
+        assert!(
+            !selector.contains("data-lurien"),
+            "no attribute is written to the page, so none can be selected on: {selector}"
+        );
+    }
+}
+
+/// A list argument has three plausible spellings on the wire, and a client that
+/// picks the wrong one should not silently run a one-step batch or upload a file
+/// named `["a.png"`.
+#[test]
+fn a_list_argument_arrives_as_an_array_or_as_text() {
+    let steps = ["goto url=https://example.test/", "title"];
+    let sent = |value: Value| {
+        let mut cmd = command("batch");
+        cmd.args
+            .as_mut()
+            .expect("args")
+            .insert("steps".to_string(), value);
+        serve::translate(&cmd).map(|(verb, args)| (verb, args.str_list("steps")))
+    };
+
+    let (verb, list) = sent(json!(steps)).expect("an array translates");
+    assert_eq!(verb, "batch");
+    assert_eq!(list.expect("list"), steps);
+
+    let (_, list) = sent(json!(steps.join("\n"))).expect("one step per line translates");
+    assert_eq!(list.expect("list"), steps);
+
+    let encoded = serde_json::to_string(&steps).expect("json");
+    let (_, list) = sent(json!(encoded)).expect("an encoded array translates");
+    assert_eq!(list.expect("list"), steps);
+
+    let err = sent(json!("")).expect_err("an empty batch is refused");
+    assert!(err.contains("steps"), "{err}");
+}
+
+/// A file input takes several files. Sending them as an array must not become one
+/// path with brackets in its name.
+#[test]
+fn upload_takes_several_files_as_an_array() {
+    let mut cmd = command("dom_upload");
     let args = cmd.args.as_mut().expect("args");
-    args.remove("selector");
-    args.insert("ref".to_string(), "element:7".to_string());
-    let (_, decoded) = serve::translate(&cmd).expect("translates");
+    args.insert("files".to_string(), json!(["/tmp/a.png", "/tmp/b.png"]));
+    let (verb, decoded) = serve::translate(&cmd).expect("translates");
+    assert_eq!(verb, "upload");
     assert_eq!(
-        decoded.opt_str("selector"),
-        Some("[data-lurien-ref=\"7\"]")
+        decoded.str_list("files").expect("list"),
+        vec!["/tmp/a.png".to_string(), "/tmp/b.png".to_string()]
     );
 }
 
@@ -238,8 +299,8 @@ fn scroll_accepts_a_direction_or_explicit_deltas() {
     let args = cmd.args.as_mut().expect("args");
     args.remove("dx");
     args.remove("dy");
-    args.insert("direction".to_string(), "up".to_string());
-    args.insert("amount".to_string(), "120".to_string());
+    args.insert("direction".to_string(), Value::from("up"));
+    args.insert("amount".to_string(), Value::from("120"));
     let (target, decoded) = serve::translate(&cmd).expect("translates");
     assert_eq!(target, "scroll");
     assert_eq!(decoded.i64("dy", 0), -120);
@@ -255,7 +316,7 @@ fn a_bad_direction_is_refused_rather_than_scrolling_down() {
     let args = cmd.args.as_mut().expect("args");
     args.remove("dx");
     args.remove("dy");
-    args.insert("direction".to_string(), "sideways".to_string());
+    args.insert("direction".to_string(), Value::from("sideways"));
     let err = serve::translate(&cmd).expect_err("bad direction");
     assert!(err.contains("sideways"), "{err}");
 }

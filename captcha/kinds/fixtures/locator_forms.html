@@ -1,0 +1,84 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>selector forms</title>
+<!--
+  Fixture for the selector resolver.
+
+  Every element here is addressable by a description a person would give, and by
+  nothing else useful: the ids are deliberately unhelpful, so a form that resolved
+  by id would prove nothing. It records what was clicked, what was focused, and
+  when, so an act that arrived before the element existed is visible in the log.
+-->
+<style>
+  body { font: 14px system-ui; margin: 0; padding: 16px; }
+  .away { position: absolute; left: -9999px; }
+  button, input { margin: 4px 0; display: block; }
+</style>
+
+<h1>Account</h1>
+
+<!-- role, with an accessible name -->
+<button id="a1">Log in</button>
+
+<!-- text, on the innermost element holding it -->
+<div id="a2"><span id="a3">Continue to checkout</span></div>
+
+<!-- label, associated the ordinary way -->
+<label for="a4">Email</label><input id="a4">
+
+<!-- placeholder -->
+<input id="a5" placeholder="you@example.com">
+
+<!-- test id -->
+<button id="a6" data-testid="submit">Send order</button>
+
+<!-- two visible elements answering to the same description -->
+<button id="a7">Send</button>
+<button id="a8">Send</button>
+
+<!-- present, never visible -->
+<button id="a9" class="away">Ghost</button>
+
+<!-- disabled, so actionable is not the same as present -->
+<button id="a10" disabled>Archive</button>
+
+<div id="late"></div>
+
+<script>
+  const loadedAt = Date.now();
+  window.__log = [];
+  function note(what) {
+    window.__log.push({ what: what, atMs: Date.now() - loadedAt });
+  }
+  addEventListener(
+    "click",
+    event => {
+      if (!event.isTrusted) {
+        note("untrusted");
+        return;
+      }
+      const el = event.target;
+      note((el.getAttribute("data-testid") || el.id || el.localName) + ":clicked");
+    },
+    true
+  );
+  addEventListener(
+    "focusin",
+    event => {
+      if (event.isTrusted) {
+        note((event.target.id || event.target.localName) + ":focused");
+      }
+    },
+    true
+  );
+
+  // The element a caller acts on before it exists. Nothing announces it: the
+  // driver has to wait on its own.
+  setTimeout(() => {
+    const late = document.createElement("button");
+    late.id = "a11";
+    late.textContent = "Publish";
+    document.getElementById("late").appendChild(late);
+    note("late:appeared");
+  }, 1500);
+</script>
