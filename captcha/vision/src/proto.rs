@@ -68,7 +68,7 @@ pub struct Reply {
     /// answer: nothing in the grid matched.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cells: Option<Vec<usize>>,
-    /// The target's share for every cell, so a caller can see what a refusal or a
+    /// The strongest box in every cell, so a caller can see what a refusal or a
     /// thin margin was made of.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scores: Option<Vec<f32>>,

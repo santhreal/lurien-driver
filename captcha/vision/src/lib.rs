@@ -6,10 +6,10 @@
 //! not belong in libxul, and a model that cannot see a session cannot leak one.
 //!
 //! Two kinds are answered. A slider is measured, which is arithmetic over a crop
-//! and needs no weights. A grid is recognised, which needs a model, so a helper
+//! and needs no weights. A grid is detected, which needs a model, so a helper
 //! started without one refuses grid requests by name and still measures sliders.
 
-pub mod clip;
+pub mod detect;
 pub mod gap;
 pub mod grid;
 pub mod pixels;
@@ -80,7 +80,7 @@ const EDGE: i64 = 1;
 /// out on the request that needed it, with the path in the refusal.
 pub struct Helper {
     model_dir: Option<PathBuf>,
-    clip: Option<clip::Clip>,
+    detector: Option<detect::Detector>,
     /// The load failure, kept so a second request does not spend another few
     /// seconds proving the same directory is still not a model.
     refused: Option<String>,
@@ -92,7 +92,7 @@ impl Helper {
     pub fn new(model_dir: Option<PathBuf>) -> Self {
         Self {
             model_dir,
-            clip: None,
+            detector: None,
             refused: None,
         }
     }
@@ -144,8 +144,9 @@ impl Helper {
             Err(e) => return proto::Reply::refused(e),
         };
         // Cells are stated in the caller's pixels; the PNG may have been taken at
-        // a scale. Cropping by CSS pixels on a scaled snapshot reads a corner of
-        // the wrong cell, which is a wrong answer rather than an error.
+        // a scale. Reading a box's cell by CSS pixels on a scaled snapshot puts it
+        // in a corner of the wrong cell, which is a wrong answer rather than an
+        // error.
         let scale = if request.width > 0.0 {
             image.width() as f64 / request.width
         } else {
@@ -154,12 +155,13 @@ impl Helper {
         // Every rectangle is checked before a model is opened: a request that names
         // a cell the picture does not hold is malformed, and proving that costs no
         // weights.
-        let mut rects = Vec::with_capacity(request.cells.len());
+        let mut cells = Vec::with_capacity(request.cells.len());
         for (index, cell) in request.cells.iter().enumerate() {
-            let x = (cell.x * scale).round() as i64;
-            let y = (cell.y * scale).round() as i64;
-            let w = (cell.w * scale).round() as i64;
-            let h = (cell.h * scale).round() as i64;
+            let cell = cell.scaled(scale);
+            let x = cell.x.round() as i64;
+            let y = cell.y.round() as i64;
+            let w = cell.w.round() as i64;
+            let h = cell.h.round() as i64;
             // A cell that reaches past the crop would be answered from whatever
             // pixels are inside it, which is a confident answer about a different
             // tile. The caller sent rectangles for a widget that was partly off
@@ -176,65 +178,49 @@ impl Helper {
                     image.height()
                 ));
             }
-            rects.push((x, y, w, h));
+            cells.push(cell);
         }
-        let model = match self.model() {
-            Ok(model) => model,
+        let detector = match self.detector() {
+            Ok(detector) => detector,
             Err(e) => return proto::Reply::refused(e),
         };
-        let mut phrases = vec![phrase];
-        phrases.extend(grid::ALTERNATIVES.iter().map(|p| (*p).to_string()));
-        let mut texts = Vec::with_capacity(phrases.len());
-        for phrase in &phrases {
-            match model.text_embedding(phrase) {
-                Ok(embedding) => texts.push(embedding),
-                Err(e) => return proto::Reply::refused(e),
-            }
-        }
-        let mut shares = Vec::with_capacity(rects.len());
-        for (x, y, w, h) in rects {
-            let crop = match image.crop(x, y, w, h) {
-                Ok(crop) => crop,
-                Err(e) => return proto::Reply::refused(e),
-            };
-            let embedding = match model.image_embedding(&crop) {
-                Ok(embedding) => embedding,
-                Err(e) => return proto::Reply::refused(e),
-            };
-            let similarities: Vec<f32> = texts
-                .iter()
-                .map(|text| clip::cosine(&embedding, text))
-                .collect();
-            shares.push(grid::target_share(&similarities));
-        }
-        let chosen = grid::chosen(&shares, grid::THRESHOLD);
-        proto::Reply::grid(chosen, shares)
+        // One pass over the whole grid, not one per cell. The detector proposes
+        // boxes anywhere in the crop and scores each against the phrase, so a small
+        // object in a busy tile is a box instead of a diluted caption, and nine
+        // tiles cost one model run instead of nine.
+        let detections = match detector.detect(&image, &[phrase], grid::REPORT_MIN) {
+            Ok(found) => found,
+            Err(e) => return proto::Reply::refused(e),
+        };
+        let scores = grid::cell_scores(&cells, &detections);
+        let chosen = grid::chosen(&scores);
+        proto::Reply::grid(chosen, scores)
     }
 
-    /// The model, loading it the first time it is needed.
-    fn model(&mut self) -> Result<&mut clip::Clip, String> {
+    /// The detector, loading it the first time it is needed.
+    fn detector(&mut self) -> Result<&mut detect::Detector, String> {
         if let Some(reason) = &self.refused {
             return Err(reason.clone());
         }
-        if self.clip.is_none() {
+        if self.detector.is_none() {
             let Some(dir) = self.model_dir.clone() else {
                 let reason = format!(
                     "this helper was started without a grid classifier, so a grid is refused \
                      rather than guessed; pass --model DIR or set {}",
-                    clip::MODEL_ENV
+                    detect::MODEL_ENV
                 );
                 self.refused = Some(reason.clone());
                 return Err(reason);
             };
-            match clip::Clip::load(&dir) {
-                Ok(model) => self.clip = Some(model),
+            match detect::Detector::load(&dir) {
+                Ok(model) => self.detector = Some(model),
                 Err(e) => {
                     self.refused = Some(e.clone());
                     return Err(e);
                 }
             }
         }
-        Ok(self.clip.as_mut().expect("just loaded"))
+        Ok(self.detector.as_mut().expect("just loaded"))
     }
 }
 
@@ -376,7 +362,7 @@ mod tests {
         );
         let error = helper().answer(&request).error.expect("a refusal");
         assert!(error.contains("--model"), "{error}");
-        assert!(error.contains(clip::MODEL_ENV), "{error}");
+        assert!(error.contains(detect::MODEL_ENV), "{error}");
     }
 
     #[test]

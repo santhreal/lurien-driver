@@ -26,7 +26,7 @@ root="$(cd "$here/../.." && pwd)"
 target="${CARGO_TARGET_DIR:-$(cd "$root" && cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')}"
 lurien="${LURIEN_CLI:-$target/debug/lurien}"
 vision="${LURIEN_VISION:-$target/debug/lurien-vision}"
-model="${LURIEN_VISION_MODEL:-$HOME/.cache/lurien/vision/clip-vit-base-patch32}"
+model="${LURIEN_VISION_MODEL:-$HOME/.cache/lurien/vision/owlvit-base-patch32}"
 fixtures="$root/captcha/kinds/fixtures"
 work="$(mktemp -d)"
 port="${FIXTURE_PORT:-$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')}"
@@ -45,8 +45,8 @@ trap cleanup EXIT
 
 [[ -x "$lurien" ]] || { echo "FAIL: no lurien binary at $lurien"; exit 1; }
 [[ -x "$vision" ]] || { echo "FAIL: no vision helper at $vision (cargo build -p lurien-vision)"; exit 1; }
-if [[ ! -f "$model/vision_model.onnx" ]]; then
-  echo "SKIP: no grid classifier at $model; set LURIEN_VISION_MODEL to a CLIP ONNX export"
+if [[ ! -f "$model/model.onnx" ]]; then
+  echo "SKIP: no grid detector at $model; set LURIEN_VISION_MODEL to an open-vocabulary detector ONNX export"
   exit 0
 fi
 
