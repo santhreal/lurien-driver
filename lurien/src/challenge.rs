@@ -29,7 +29,7 @@ pub const CONFIG_ENV: &str = "LURIEN_CHALLENGE";
 /// typed error rather than reported as a pass. An interactive kind joins this
 /// list only with a dated scorecard row against a live vendor page, which
 /// `tests/kinds_registry.rs` enforces.
-pub const CLAIMED_KINDS: &[&str] = &["none", "score", "checkbox", "fail"];
+pub const CLAIMED_KINDS: &[&str] = &["none", "score", "checkbox", "pow", "slider", "fail"];
 
 /// How long the engine may spend on one page before reporting what it has.
 const BUDGET_MS: u64 = 20_000;
@@ -107,7 +107,7 @@ impl ChallengeConfig {
     #[must_use]
     pub fn to_env_value(&self) -> String {
         if let Some(raw) = self.verbatim.as_ref() {
-            return raw.clone();
+            return with_dynamics(raw);
         }
         let mut config = serde_json::json!({
             "catalog": catalog::catalog_json(),
@@ -115,6 +115,7 @@ impl ChallengeConfig {
             "budget_ms": self.budget_ms,
             "claimed_kinds": CLAIMED_KINDS,
             "trajectory": approach_path(),
+            "drag_profile": drag_profile(),
         });
         if let Some(dir) = self.modules.as_ref() {
             config["modules"] = serde_json::Value::String(dir.display().to_string());
@@ -150,6 +151,26 @@ fn evidence_from(raw: &str) -> Option<PathBuf> {
         return None;
     }
     Some(PathBuf::from(path))
+}
+
+/// A caller-supplied configuration, with freshly sampled pointer dynamics filled
+/// in where it named none.
+///
+/// A fixture or a helper-equipped run names its own catalog, not its own mouse.
+/// Passing such a config through untouched leaves the engine with no trajectory
+/// and no drag profile, and a built-in constant is a signature: every session
+/// would move identically. A config that does name its own dynamics keeps them,
+/// which is how a test drives a shape the sampler would never produce.
+fn with_dynamics(raw: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return raw.to_string();
+    };
+    let Some(map) = value.as_object_mut() else {
+        return raw.to_string();
+    };
+    map.entry("trajectory").or_insert_with(approach_path);
+    map.entry("drag_profile").or_insert_with(drag_profile);
+    value.to_string()
 }
 
 /// One evidence file per process, so two sessions in one process share a log and
@@ -190,6 +211,49 @@ fn approach_path() -> serde_json::Value {
     serde_json::Value::Array(rows)
 }
 
+/// Steps in one drag travel. Enough to carry acceleration and two corrections.
+const DRAG_STEPS: usize = 16;
+
+/// How far past the answer a hand goes before correcting back, as a fraction of
+/// the travel. Measured overshoot on a short drag sits between two and five
+/// percent; the exact value is sampled per drag so two solves never match.
+const OVERSHOOT: (f64, f64) = (0.02, 0.05);
+
+/// The travel profile for one drag: fractions of the answer, each with its own
+/// dwell and vertical wobble.
+///
+/// Sampled from the same corpus as the approach path, then given an overshoot and
+/// two corrections. A vendor that scores a slider scores the dynamics, not the
+/// landing: constant speed in a straight line is the shape that fails, and it is
+/// the shape every driver-side `dragAndDrop` produces.
+fn drag_profile() -> serde_json::Value {
+    use rand::Rng;
+    let sampler = MouseSampler::new();
+    let mut rng = rand::rngs::StdRng::from_entropy();
+    // A drag runs along its own axis, so the sampled path supplies the timing
+    // shape and the wobble; the fraction is its horizontal progress.
+    let points = sampler.resampled_path(0.0, 0.0, 1.0, 0.0, DRAG_STEPS, 0.9, &mut rng);
+    let last = points.len().saturating_sub(1);
+    let mut rows: Vec<serde_json::Value> = Vec::with_capacity(DRAG_STEPS + 3);
+    for (i, (x, y)) in points.iter().enumerate() {
+        let progress = if last == 0 { 1.0 } else { i as f64 / last as f64 };
+        // Fast through the middle, slow at both ends: a hand does not start or
+        // stop a drag at speed.
+        let dt = 9.0 + 16.0 * (progress - 0.5).abs() * 2.0;
+        rows.push(serde_json::json!({
+            "f": (x.clamp(0.0, 0.985) * 1000.0).round() / 1000.0,
+            "dy": (y * 100.0).round() / 100.0,
+            "dt": dt.round() as u64,
+        }));
+    }
+    let overshoot = rng.gen_range(OVERSHOOT.0..OVERSHOOT.1);
+    let correction = overshoot * rng.gen_range(0.2..0.6);
+    rows.push(serde_json::json!({ "f": 1.0 + overshoot, "dy": 0.8, "dt": 27 }));
+    rows.push(serde_json::json!({ "f": 1.0 - correction, "dy": 0.0, "dt": 33 }));
+    rows.push(serde_json::json!({ "f": 1.0 + correction / 3.0, "dy": -0.4, "dt": 21 }));
+    serde_json::Value::Array(rows)
+}
+
 /// The engine's last word on `url`, if it wrote one.
 ///
 /// Reads the newest matching row. A missing file, an unreadable file, or a file
@@ -204,6 +268,31 @@ pub fn outcome_for(evidence: &Path, url: &str) -> Option<EngineOutcome> {
         .find(|row| url.is_empty() || same_page(&row.url, url))
 }
 
+/// Is the engine solving this page right now?
+///
+/// The observer appends one `taken` row the moment it owns a page, before any
+/// pixel is read. Only the widget's own context can see a cross-origin challenge,
+/// so the page probe reports `none` for a page that is being solved; a caller
+/// that trusted the probe would return a clean page and tear the session down
+/// mid-solve. A `taken` row with no verdict after it means the work is still
+/// running.
+#[must_use]
+pub fn taken(evidence: &Path, url: &str) -> bool {
+    let Ok(text) = std::fs::read_to_string(evidence) else {
+        return false;
+    };
+    text.lines().any(|line| {
+        let Ok(row) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            return false;
+        };
+        if row.get("event").and_then(|v| v.as_str()) != Some("taken") {
+            return false;
+        }
+        let seen = row.get("url").and_then(|v| v.as_str()).unwrap_or_default();
+        url.is_empty() || same_page(seen, url)
+    })
+}
+
 /// Evidence rows carry the URL the engine saw, which may differ from the URL
 /// asked for by a redirect or a trailing slash.
 fn same_page(seen: &str, asked: &str) -> bool {
@@ -212,6 +301,13 @@ fn same_page(seen: &str, asked: &str) -> bool {
 
 fn parse_row(line: &str) -> Option<EngineOutcome> {
     let row: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    // A diagnostic row carries `event` and no verdict. Reading one as an outcome
+    // reports a page as unsolved while the engine is still working on it, and
+    // ends the session mid-solve.
+    if row.get("event").is_some() {
+        return None;
+    }
+    let solved = row.get("solved")?.as_bool()?;
     let kind = row.get("kind")?.as_str()?.to_string();
     Some(EngineOutcome {
         kind,
@@ -219,7 +315,7 @@ fn parse_row(line: &str) -> Option<EngineOutcome> {
             .get("vendor")
             .and_then(|v| v.as_str())
             .map(str::to_string),
-        solved: row.get("solved").and_then(serde_json::Value::as_bool) == Some(true),
+        solved,
         via: row.get("via").and_then(|v| v.as_str()).map(str::to_string),
         ms: row.get("ms").and_then(serde_json::Value::as_u64).unwrap_or(0),
         error: row.get("error").and_then(|v| v.as_str()).map(str::to_string),
@@ -271,6 +367,36 @@ mod tests {
         }
     }
 
+    /// A caller-supplied config names a catalog, not a mouse. Without this the
+    /// engine falls back to a frozen built-in profile, so every session drags
+    /// identically, which is the exact signature the sampled profile exists to
+    /// avoid.
+    #[test]
+    fn a_caller_supplied_config_gains_dynamics_but_keeps_its_own() {
+        let bare = r#"{"catalog":[],"evidence":"/tmp/e.jsonl","budget_ms":1000}"#;
+        let filled: serde_json::Value =
+            serde_json::from_str(&with_dynamics(bare)).expect("filled config is json");
+        assert!(filled["trajectory"].as_array().is_some_and(|p| p.len() >= 8));
+        assert!(filled["drag_profile"].as_array().is_some_and(|p| p.len() >= 12));
+        assert_eq!(filled["budget_ms"], 1000);
+        // Two sessions must not share one drag.
+        assert_ne!(
+            with_dynamics(bare),
+            with_dynamics(bare),
+            "the fill-in reused one profile across sessions"
+        );
+
+        let named = r#"{"catalog":[],"drag_profile":[{"f":1.0,"dy":0,"dt":10}],"trajectory":[{"x":0.5,"y":0.5,"dt":1}]}"#;
+        let kept: serde_json::Value =
+            serde_json::from_str(&with_dynamics(named)).expect("kept config is json");
+        assert_eq!(kept["drag_profile"].as_array().expect("profile").len(), 1);
+        assert_eq!(kept["trajectory"].as_array().expect("path").len(), 1);
+
+        // A config this build cannot parse is still the caller's, and is passed on
+        // rather than replaced with one the caller never asked for.
+        assert_eq!(with_dynamics("not json"), "not json");
+    }
+
     #[test]
     fn the_trajectory_stays_inside_the_target_and_ends_at_its_centre() {
         let path = approach_path();
@@ -292,6 +418,51 @@ mod tests {
             gaps.iter().collect::<std::collections::BTreeSet<_>>().len() > 1,
             "a constant inter-event gap is the tell that gives a synthetic path away"
         );
+    }
+
+    #[test]
+    fn the_drag_profile_overshoots_corrects_and_never_holds_one_speed() {
+        let profile = drag_profile();
+        let steps = profile.as_array().expect("profile array");
+        assert!(steps.len() >= 12, "a {}-step drag is not a drag", steps.len());
+        let fractions: Vec<f64> = steps
+            .iter()
+            .map(|s| s["f"].as_f64().expect("fraction"))
+            .collect();
+        assert!(
+            fractions.iter().any(|f| *f > 1.0),
+            "the travel never passes the answer, so it never corrects back"
+        );
+        let after_overshoot = fractions
+            .iter()
+            .position(|f| *f > 1.0)
+            .expect("an overshoot");
+        assert!(
+            fractions[after_overshoot..].iter().any(|f| *f < 1.0),
+            "the travel overshoots and never comes back: {fractions:?}"
+        );
+        assert!(
+            fractions.iter().all(|f| *f >= 0.0 && *f < 1.2),
+            "a travel outside the answer by more than a fifth is not a correction: {fractions:?}"
+        );
+        let dwells: Vec<u64> = steps
+            .iter()
+            .map(|s| s["dt"].as_u64().expect("dwell"))
+            .collect();
+        assert!(
+            dwells.iter().collect::<std::collections::BTreeSet<_>>().len() > 2,
+            "one dwell for the whole travel is a constant-speed drag: {dwells:?}"
+        );
+        assert!(
+            steps.iter().any(|s| s["dy"].as_f64().expect("wobble").abs() > 0.05),
+            "a drag with no vertical wobble is a ruler, not a hand"
+        );
+    }
+
+    #[test]
+    fn two_drags_do_not_share_a_profile() {
+        // A profile reused across solves is a signature. Sampling is per drag.
+        assert_ne!(drag_profile(), drag_profile());
     }
 
     #[test]
@@ -345,6 +516,49 @@ mod tests {
         .expect("write evidence");
         let found = outcome_for(&path, "https://a.test/").expect("the intact row");
         assert_eq!(found.kind, "score");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Debug builds append one row per sighting so a page the observer never
+    /// reached is distinguishable from a page with no challenge. A sighting names
+    /// a kind and a url but holds no verdict, and reading one as an outcome ends
+    /// the session while the engine is still solving. Every diagnostic row the
+    /// engine can emit is checked here, not only the one that caused the fault.
+    #[test]
+    fn a_diagnostic_row_is_never_read_as_a_verdict() {
+        let dir = std::env::temp_dir().join(format!("lurien-evidence-diag-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("evidence.jsonl");
+        let diagnostics = [
+            r#"{"at":"t","event":"configured","bindings":10}"#,
+            r#"{"at":"t","event":"sighting","url":"https://a.test/","top":10,"isTop":true,"kind":"slider","vendor":"fixture","signals":[],"folded":"slider","contexts":2}"#,
+            r#"{"at":"t","event":"sighting","url":"https://a.test/","top":10,"isTop":false,"kind":"checkbox","vendor":"fixture","signals":[],"folded":"checkbox","contexts":2}"#,
+        ];
+        for row in diagnostics {
+            std::fs::write(&path, format!("{row}\n")).expect("write evidence");
+            assert_eq!(
+                outcome_for(&path, "https://a.test/"),
+                None,
+                "a diagnostic row was read as a verdict: {row}"
+            );
+        }
+        // A verdict after the diagnostics is still found.
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{}\n",
+                diagnostics[1],
+                r#"{"kind":"slider","vendor":"fixture","solved":true,"via":"field","ms":700,"url":"https://a.test/","contexts":2,"source":"engine"}"#
+            ),
+        )
+        .expect("write evidence");
+        let found = outcome_for(&path, "https://a.test/").expect("the verdict row");
+        assert!(found.solved);
+        assert_eq!(found.kind, "slider");
+        // A row with a kind but no verdict field is not a verdict either.
+        std::fs::write(&path, "{\"kind\":\"slider\",\"url\":\"https://a.test/\"}\n")
+            .expect("write evidence");
+        assert_eq!(outcome_for(&path, "https://a.test/"), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

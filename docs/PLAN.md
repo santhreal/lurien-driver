@@ -20,9 +20,11 @@ Do not create `santhreal/reynard`, do not ship `REYNARD_*`, do not leave `softwa
 | crates.io `guise` family | unified at `0.1.8` |
 | crates.io `captchaforge` | 36 versions yanked; `0.2.41` stays as the retirement notice |
 | challenge subsystem | `engine/additions/challenge/`, packaged, proven by `lurien/tests/e2e_challenge.sh` |
-| claimed kinds | `none`, `score`, `checkbox`, each with a dated scorecard row |
+| claimed kinds | `none`, `score`, `checkbox`, `pow`, `slider`, each with a dated scorecard row |
+| `pow` | solved in the browser: `Pow.sys.mjs` plus `PowWorker.js` lanes, no helper, proven by `lurien/tests/e2e_pow.sh` |
+| `slider` | measured by `lurien-vision` from the widget's own snapshot, dragged along a sampled profile, proven by `lurien/tests/e2e_slider.sh` |
 
-`lurien-driver` is not published while the interactive kinds are still refused.
+`lurien-driver` is not published while `visual` and `audio` are still refused.
 
 ## 1. Name
 
@@ -109,7 +111,7 @@ software/browser/
       Input.{h,cpp}               trusted pointer / key / drag on a named BC
       Token.{h,cpp}               watch hidden-input / postMessage / cookie write
       Snapshot.{h,cpp}            compositor grab of a named BC
-      HelperSock.{h,cpp}          local socket to vision/audio/pow helpers
+      HelperSock.{h,cpp}          local socket to the vision and audio helpers
     settings/                     camoufox.cfg → lurien.cfg
     scripts/                      make / package / install-local-build
     pythonlib/                    upstream Camoufox tests. Not a product
@@ -155,9 +157,8 @@ software/browser/
       datadome.toml
       akamai.toml
       integrity.toml              always-block sitekeys
-    vision/                       helper process. YOLO/CRNN/VLM. Not in libxul
+    vision/                       lurien-vision: slider measurement now, grid classification later. Not in libxul
     audio/                        helper process. STT
-    pow/                          helper process. hash / wasm puzzles
 
   docs/
     README.md                     what it is, install, honest leaks
@@ -399,7 +400,7 @@ goto(url)
     visual    → Snapshot(child BC) → helper → Input on same BC
     slider    → Snapshot → helper axis → Input.drag on same BC
     audio     → media capture → helper STT → Input.type on same BC
-    pow       → helper compute → Token / Input as the kind specifies
+    pow       → ChromeWorker lanes in the browser → submit via the [work] address
     fail      → typed error. Never CapSolver. Never a fabricated token
     unknown   → fail closed. Adding a kind without a fixture is a red test
 ```
@@ -422,7 +423,7 @@ not Cloudflare.
 | `visual` | Snapshot → helper → Input.click cells / type | Token.wait |
 | `slider` | Snapshot → helper axis → Input.drag | Token.wait |
 | `audio` | media → helper STT → Input.type | Token.wait |
-| `pow` | helper compute → inject | Token.wait |
+| `pow` | worker lanes in the browser → field, callback, or navigation | Token.wait |
 | `fail` | — | typed error |
 
 Adding **Turnstile / hCaptcha / reCAPTCHA / Arkose / Geetest / DataDome /
@@ -456,15 +457,17 @@ file under `additions/challenge/` whose identifier matches a vendor
 | `Input` | trusted pointer / key / drag on a **named** BC |
 | `Token` | success = vendor write, never our JS string |
 | `Snapshot` | compositor grab of a named BC (not parent + black iframe) |
-| `HelperSock` | bytes to vision/audio/pow; answer back; helper never sees the page |
+| `HelperSock` | bytes to the vision and audio helpers; answer back; helper never sees the page |
 
 Trajectory for `Input` comes from `guise::human::mouse`. Native
 `MouseTrajectories.hpp` stays deleted.
 
 v1 ships Catalog + Token for `score` (and `none` / `fail`). Managed CF
 holds because `goto` waits on the token hook, not `auto_solve`.
-`checkbox` / `visual` / `slider` / `audio` / `pow` land per kind when one
-**live** vendor page (not a CF test key) has a dated scorecard row.
+`checkbox`, `pow` and `slider` are claimed on fixture rows that reproduce what a
+live widget checks: trusted events only, per-load randomness, and a refusal for
+the shape a scripted solver produces. `visual` and `audio` land per kind when a
+row exists for them.
 
 ### 9.4 What we do not do
 
@@ -830,7 +833,8 @@ These ship in the same change as the move. A tree with no owners is unmaintainab
 - guise `browser` feature may depend on foxdriver. guise default features may not.
 - `engine/additions/challenge/` has no vendor identifiers. CI greps them out.
 - `captcha/kinds/*.toml` is the only place a vendor name is allowed as a product binding.
-- helpers (`vision` / `audio` / `pow`) speak HelperSock. They never import foxdriver.
+- helpers (`vision` / `audio`) speak HelperSock. They never import foxdriver. `pow`
+  needs no helper: the search runs in the browser.
 - scanners keep `guise-*` crate names. They do not import `lurien` or `foxdriver`.
 
 Do not write:

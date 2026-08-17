@@ -16,6 +16,10 @@ pub struct VendorBinding {
     pub source: &'static str,
     /// Where the widget's actionable element lives, in chrome-visible language.
     pub target: &'static str,
+    /// Where a drag starts, when that is not the element being measured. A slider
+    /// is measured on its puzzle and dragged by its handle; empty means both are
+    /// the same element.
+    pub handle: &'static str,
     /// Substrings that identify the widget's iframe.
     pub iframe_src: &'static [&'static str],
     /// Custom element names the widget defines.
@@ -30,6 +34,9 @@ pub struct VendorBinding {
     pub token_inputs: &'static [&'static str],
     /// Cookies the solved token is written into.
     pub token_cookies: &'static [&'static str],
+    /// `[work]` pairs for an arithmetic kind: where to read the challenge, how
+    /// hard it is, and where the answer goes. Empty for a perceptual kind.
+    pub work: &'static [(&'static str, &'static str)],
 }
 
 include!(concat!(env!("OUT_DIR"), "/catalog.rs"));
@@ -127,6 +134,7 @@ pub fn catalog_json() -> serde_json::Value {
                     "kind": b.kind,
                     "source": b.source,
                     "target": b.target,
+                    "handle": b.handle,
                     "iframe_src": b.iframe_src,
                     "custom_elements": b.custom_elements,
                     "selectors": b.selectors,
@@ -134,6 +142,10 @@ pub fn catalog_json() -> serde_json::Value {
                     "scripts": b.scripts,
                     "token_inputs": b.token_inputs,
                     "token_cookies": b.token_cookies,
+                    "work": b.work
+                        .iter()
+                        .map(|(k, v)| ((*k).to_string(), serde_json::Value::from(*v)))
+                        .collect::<serde_json::Map<String, serde_json::Value>>(),
                 })
             })
             .collect(),

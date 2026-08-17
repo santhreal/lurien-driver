@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>proof of work</title>
+<!--
+  The `pow` fixture: a page that states a hash target and refuses everything
+  except a correct answer typed by a keyboard.
+
+  Each load mints a random challenge and a random difficulty, so a nonce cannot
+  be replayed from an earlier run and a hardcoded answer cannot pass. The token
+  is written only when all three hold:
+
+    - the digest of challenge + response starts with `difficulty` hex zeros,
+      checked here with crypto.subtle, not with the engine's own implementation,
+    - every input event that built the response was trusted, so a value
+      assignment from script is refused the way a vendor refuses one,
+    - as many trusted keydowns arrived as the response has characters, so the
+      answer was typed rather than pasted in one shot.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 16px; }
+  input { font: 13px monospace; width: 22em; }
+  #state { margin-top: 8px; }
+</style>
+
+<h1>Checking your browser</h1>
+<p id="ask"></p>
+<label>Response <input name="pow-response" autocomplete="off"></label>
+<input type="hidden" name="fixture-token" value="">
+<div id="state">waiting</div>
+
+<script>
+  const hex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+  const random = n => hex(crypto.getRandomValues(new Uint8Array(n)));
+
+  // A fresh challenge every load. A replayed nonce is worth nothing.
+  const challenge = random(12);
+  // Three to four hex zeros: thousands to tens of thousands of digests, so a
+  // lucky first guess cannot pass for a search, and still well under a second
+  // for a correct implementation.
+  const difficulty = 3 + Math.floor(Math.random() * 2);
+  window.__pow = { challenge, difficulty };
+
+  const field = document.querySelector('input[name="pow-response"]');
+  const token = document.querySelector('input[name="fixture-token"]');
+  const state = document.getElementById("state");
+  document.getElementById("ask").textContent =
+    `sha256("${challenge}" + response) must start with ${difficulty} zeros`;
+
+  let trustedKeys = 0;
+  let untrusted = false;
+
+  field.addEventListener("keydown", event => {
+    if (event.isTrusted) {
+      trustedKeys += 1;
+    } else {
+      untrusted = true;
+    }
+  });
+
+  async function digest(input) {
+    const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+    return hex(new Uint8Array(buffer));
+  }
+
+  // Every keystroke is checked. No in-flight guard: dropping the last check
+  // because an earlier digest was still running would lose the answer.
+  field.addEventListener("input", async event => {
+    if (!event.isTrusted) {
+      untrusted = true;
+    }
+    const response = field.value.trim();
+    if (!response) {
+      return;
+    }
+    const hash = await digest(challenge + response);
+    if (untrusted) {
+      state.textContent = "refused: the response was not typed";
+      return;
+    }
+    if (trustedKeys < response.length) {
+      state.textContent = `refused: ${trustedKeys} keys for ${response.length} characters`;
+      return;
+    }
+    if (!hash.startsWith("0".repeat(difficulty))) {
+      state.textContent = `wrong: ${hash.slice(0, 8)}`;
+      return;
+    }
+    token.value = `fixture-${difficulty}-${response}`;
+    window.__pow.acceptedHash = hash;
+    state.textContent = "solved";
+  });
+</script>

@@ -20,7 +20,7 @@ this tree, so it stays a separate crate and never learns that lurien exists.
 | `echo/` | test reflector | rustls | foxdriver, lurien |
 | `captcha/kinds/` | vendor TOML | — (data) | — |
 | `lurien/kinds` | symlink to `captcha/kinds` | — | — |
-| `captcha/vision/` `audio/` `pow/` | helper processes | HelperSock protocol | foxdriver, page, guise |
+| `captcha/vision/` | `lurien-vision`: the slider measurement helper, one crop in, one axis out | png, serde | foxdriver, page, guise, lurien |
 | `docs/` | plan + this file | — | — |
 
 All of these directories live under `software/browser/`.
@@ -71,6 +71,8 @@ the directory.
 | `Observer.sys.mjs` | page state keyed by top browsing context; the only writer of the evidence file |
 | `ChallengeParent.sys.mjs` `ChallengeChild.sys.mjs` | the actor pair; the child walks closed shadow roots and reports what it can see |
 | `Input.sys.mjs` | trusted pointer and key events through the widget event path |
+| `Pow.sys.mjs` | reads a `[work]` table, runs the nonce search in lanes, submits through the address the binding named |
+| `PowWorker.js` | one grinding lane: SHA-256 plus the difficulty predicate, off the main thread |
 | `Token.sys.mjs` | observes a vendor token appearing in a field or a cookie; read-only |
 | `Snapshot.sys.mjs` | per-context compositor snapshot as PNG |
 | `HelperSock.sys.mjs` | loopback-only line protocol to a helper process |
@@ -82,7 +84,16 @@ CI (`.github/workflows/ci.yml`):
 - `cargo test --workspace --all-targets`, plus the `lurien-browser` doc tests.
 - `cargo tree -p lurien-driver` pulls no scanner crate and no browser sidecar.
 - guise without default features does not pull the driver.
-- every vendor binding names a kind `_schema.toml` closes.
+- every vendor binding names a kind `_schema.toml` closes, every `pow` binding
+  carries a `[work]` table whose algorithm, difficulty format and addresses the
+  engine implements, every `slider` binding names the handle a hand grabs, and
+  every binding of a claimed kind names a target the engine can resolve rather
+  than prose.
+- `node lurien/tests/pow_sha256.mjs` checks the grinding worker's digest against
+  a reference implementation.
+- `cargo test -p lurien-vision` measures a crop the browser rendered, so the
+  slider arithmetic is pinned against a real snapshot and not only synthetic
+  images.
 
 The vendor-name grep over `engine/additions/challenge/` runs in the engine
 repository, which owns that directory. `cargo test -p lurien-driver --test

@@ -51,7 +51,10 @@ and the token to watch for.
 `goto` reports the kind it saw and, when the engine acted, what it observed.
 A kind is claimed only when [`docs/bench-results/challenge-scorecard.md`](docs/bench-results/challenge-scorecard.md)
 carries a dated row for it; an unclaimed kind is refused rather than reported as
-a pass, and a test enforces that. Claimed today: `none`, `score`, `checkbox`.
+a pass, and a test enforces that. Claimed today: `none`, `score`, `checkbox`,
+`pow`, `slider`. A proof of work is computed in the browser itself, in worker
+lanes, with no helper process and no external service. A slider is measured from
+the rendered image by a loopback helper and dragged with sampled dynamics.
 
 Honest leaks: matched-host Linux Firefox only. Cross-OS fonts/WebGL/WebGPU,
 inert `canvas:seed`, and proxyless TTL remain.

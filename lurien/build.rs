@@ -50,9 +50,15 @@ struct Binding {
     /// Where the widget's actionable element lives, in chrome-visible language.
     /// The engine reads it; nothing here interprets it.
     target: String,
+    /// Where a drag starts, when that is not the element being measured. A slider
+    /// is measured on its puzzle and dragged by its handle. Empty means the two
+    /// are the same element.
+    handle: String,
     signals: BTreeMap<String, Vec<String>>,
     token_inputs: Vec<String>,
     token_cookies: Vec<String>,
+    /// `[work]` for an arithmetic kind: addresses, not values. Empty otherwise.
+    work: BTreeMap<String, String>,
 }
 
 fn parse(path: &Path) -> Binding {
@@ -60,9 +66,11 @@ fn parse(path: &Path) -> Binding {
     let mut name = String::new();
     let mut kind = String::new();
     let mut target = String::new();
+    let mut handle = String::new();
     let mut signals: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut token_inputs = Vec::new();
     let mut token_cookies = Vec::new();
+    let mut work: BTreeMap<String, String> = BTreeMap::new();
     let mut section = String::new();
 
     for line in raw.lines() {
@@ -86,6 +94,7 @@ fn parse(path: &Path) -> Binding {
             (_, "name") => name = unquote(value),
             (_, "kind") => kind = unquote(value),
             (_, "target") => target = unquote(value),
+            (_, "handle") => handle = unquote(value),
             (_, "token") => {
                 for field in ["hidden_input", "verify_field"] {
                     if let Some(found) = inline_field(value, field) {
@@ -99,6 +108,9 @@ fn parse(path: &Path) -> Binding {
             ("signals", _) => {
                 signals.insert(key.to_string(), array(value));
             }
+            ("work", _) => {
+                work.insert(key.to_string(), unquote(value));
+            }
             _ => {}
         }
     }
@@ -108,9 +120,11 @@ fn parse(path: &Path) -> Binding {
         name,
         kind,
         target,
+        handle,
         signals,
         token_inputs,
         token_cookies,
+        work,
     }
 }
 
@@ -160,13 +174,21 @@ fn write_binding(out: &mut String, binding: &Binding, path: &Path) {
         s.push(']');
         s
     };
+    // `work` is emitted as sorted pairs rather than a struct: the engine reads
+    // the keys the schema documents, and a new key needs no Rust change.
+    let mut work = String::from("&[");
+    for (k, v) in &binding.work {
+        let _ = write!(work, "({k:?}, {v:?}), ");
+    }
+    work.push(']');
     let _ = writeln!(
         out,
-        "    VendorBinding {{ name: {:?}, kind: {:?}, source: {:?}, target: {:?}, iframe_src: {}, custom_elements: {}, selectors: {}, cookies: {}, scripts: {}, token_inputs: {}, token_cookies: {} }},",
+        "    VendorBinding {{ name: {:?}, kind: {:?}, source: {:?}, target: {:?}, handle: {:?}, iframe_src: {}, custom_elements: {}, selectors: {}, cookies: {}, scripts: {}, token_inputs: {}, token_cookies: {}, work: {} }},",
         binding.name,
         binding.kind,
         path.file_name().and_then(|s| s.to_str()).unwrap_or_default(),
         binding.target,
+        binding.handle,
         list("iframe_src"),
         list("custom_elements"),
         list("selectors"),
@@ -174,5 +196,6 @@ fn write_binding(out: &mut String, binding: &Binding, path: &Path) {
         list("scripts"),
         strings(&binding.token_inputs),
         strings(&binding.token_cookies),
+        work,
     );
 }

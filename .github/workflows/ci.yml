@@ -62,3 +62,22 @@ jobs:
               sys.exit(f"vendor bindings name a kind outside the closed set: {bad}")
           print(f"{len(closed)} closed kinds, every binding inside it")
           PY
+
+  pow-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The grinding worker carries its own SHA-256. A wrong digest still
+      # terminates and still reports a nonce, so it is checked against node's.
+      - name: worker digest matches a reference implementation
+        run: node lurien/tests/pow_sha256.mjs
+
+  slider-measurement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The measurement is arithmetic over a crop, so it is checkable without a
+      # browser. The suite includes a crop the browser rendered, which is what
+      # catches a finder that only works on images a test drew.
+      - name: the slider helper measures a rendered crop
+        run: cargo test -p lurien-vision

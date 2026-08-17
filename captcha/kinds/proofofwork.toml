@@ -8,3 +8,10 @@ scripts = ["altcha", "hashcash", "pow.js"]
 
 target = "no interactive element; the worker solves and posts"
 token = { hidden_input = "altcha" }
+
+[work]
+algo = "sha256"
+format = "hex-zeros"
+challenge = "global:__pow.challenge"
+difficulty = "global:__pow.difficulty"
+submit = "field:input[name=pow-response]"

@@ -6,5 +6,8 @@ iframe_src = ["captcha.datadome.co", "geo.captcha-delivery.com"]
 custom_elements = []
 cookies = ["datadome"]
 
-target = "slider handle in this BC"
+# Measured on the puzzle, dragged by the handle: two elements, as on the live
+# widget, where dragging the puzzle moves nothing.
+target = "first canvas in this BC"
+handle = "first draggable in this BC"
 token = { cookie = "datadome" }

@@ -41,7 +41,26 @@
   over the page probe, so a cleared widget is not re-reported as pending.
 - A kind is claimed only when the scorecard carries a dated row for it. An unclaimed kind
   is refused with a typed error rather than reported as a pass, and two tests enforce the
-  scorecard against the claimed set. Claimed: `none`, `score`, `checkbox`.
+  scorecard against the claimed set. Claimed: `none`, `score`, `checkbox`, `pow`, `slider`.
+- The `pow` kind is solved in the browser with no helper process. The binding's
+  `[work]` table says where the challenge and difficulty live and where the answer
+  goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by
+  typing it through the keyboard path, calling a page callback, or navigating. The
+  lane count follows the core count the page itself reads, and a difficulty above
+  `pow_max_difficulty` is refused rather than paid for.
+- The `slider` kind is measured from the rendered image. `lurien-vision` is a loopback
+  helper of a few hundred lines with no model: it finds the puzzle and the cut-out as
+  two equal-width pairs of vertical edges and returns one number, in CSS pixels. The
+  drag is a profile sampled per solve from the same corpus as the approach path, with
+  an overshoot and two corrections, dispatched as individual trusted moves. A binding
+  names the puzzle it measures and the handle it drags, both resolved structurally.
+- A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory` and
+  `drag_profile` when it names neither. Without this the engine fell back to a
+  built-in constant, so every session moved identically.
+- Evidence carries a `taken` row when a page's pipeline starts. A cross-origin widget
+  is invisible to the page probe, so `goto` used to see a clean page and end the
+  session mid-solve; it now waits for the verdict. A diagnostic row is never read as
+  one.
 
 ### Launch contract
 

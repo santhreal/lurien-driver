@@ -38,7 +38,9 @@ mkdir -p "$work/www"
 sed "s|CHILD_URL|http://127.0.0.1:$port/challenge_checkbox_child.html|" \
   "$fixtures/challenge_checkbox_parent.html" > "$work/www/parent.html"
 cp "$fixtures/challenge_checkbox_child.html" "$work/www/"
-( cd "$work/www" && python3 -m http.server "$port" --bind 0.0.0.0 >/dev/null 2>&1 ) &
+# `exec` so `$!` is python itself: killing the subshell leaves the server running
+# and the next run picks a new port while the old one holds the tree.
+( cd "$work/www" && exec python3 -m http.server "$port" --bind 0.0.0.0 >/dev/null 2>&1 ) &
 server_pid=$!
 
 for _ in $(seq 1 40); do

@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>slider host page</title>
+<!--
+  The page half of the `slider` fixture. The puzzle is served from a different
+  host, so the browser gives it its own browsing context in its own process, which
+  is the shape a real slider deployment has: the parent cannot read the puzzle,
+  cannot measure it, and its pointer events land in the wrong process.
+
+  CHILD_URL is substituted by lurien/tests/e2e_slider.sh.
+-->
+<style>
+  body { font: 14px system-ui; margin: 0; padding: 24px; }
+  iframe { width: 360px; height: 240px; border: 1px solid #ccc; }
+</style>
+
+<h1>Verification required</h1>
+<p>Slide the piece into place to continue.</p>
+<iframe src="CHILD_URL" title="slider widget"></iframe>
+<div id="parent-state">the parent cannot read the widget</div>
+
+<script>
+  // Recorded for the same reason the checkbox fixture records it: the parent
+  // reaching into the widget must throw, or the fixture is not cross-origin and
+  // proves nothing about the context the engine had to reach.
+  const frame = document.querySelector("iframe");
+  frame.addEventListener("load", () => {
+    try {
+      const reached = frame.contentDocument?.getElementById("puzzle");
+      document.getElementById("parent-state").textContent = reached
+        ? "same origin: this fixture is misconfigured"
+        : "the parent cannot read the widget";
+    } catch (e) {
+      document.getElementById("parent-state").textContent = "the parent cannot read the widget";
+    }
+  });
+</script>

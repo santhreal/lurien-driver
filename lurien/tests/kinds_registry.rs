@@ -245,3 +245,225 @@ fn every_closed_kind_is_either_claimed_or_named_as_refused() {
         );
     }
 }
+
+/// Any string array in `_schema.toml`, read at run time so the schema stays the
+/// single list and a test cannot drift from it.
+fn schema_list(key: &str) -> Vec<String> {
+    let raw = fs::read_to_string(kinds_dir().join("_schema.toml")).expect("_schema.toml");
+    let mut lines = raw.lines();
+    while let Some(line) = lines.next() {
+        let t = line.trim();
+        let Some(rest) = t.strip_prefix(key) else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix('=') else {
+            continue;
+        };
+        // An array may be written on one line or spread over several. Collect until
+        // the closing bracket so the schema stays readable without a test caring.
+        let mut inner = rest.trim().trim_start_matches('[').to_string();
+        while !inner.contains(']') {
+            let Some(next) = lines.next() else {
+                break;
+            };
+            inner.push(' ');
+            inner.push_str(next.trim());
+        }
+        let inner = inner.split(']').next().unwrap_or_default().to_string();
+        let values: Vec<String> = inner
+            .split(',')
+            .map(|v| v.trim().trim_matches('"').to_string())
+            .filter(|v| !v.is_empty())
+            .collect();
+        assert!(!values.is_empty(), "schema key {key} lists nothing");
+        return values;
+    }
+    panic!("schema has no key {key}");
+}
+
+/// A computed kind is executed from its `[work]` table. A row that omits it, or
+/// names an algorithm, a difficulty format, or an address form no primitive
+/// implements, is a vendor that would fail on a live page in silence.
+#[test]
+fn every_pow_binding_carries_a_work_table_the_engine_can_execute() {
+    let algos = schema_list("pow_algos");
+    let formats = schema_list("pow_formats");
+    let reads = schema_list("work_read_forms");
+    let submits = schema_list("work_submit_forms");
+    let mut checked = 0;
+    for binding in lurien::catalog::CATALOG {
+        if binding.kind != "pow" {
+            assert!(
+                binding.work.is_empty(),
+                "{} is kind {} and carries a work table nothing will execute",
+                binding.name,
+                binding.kind
+            );
+            continue;
+        }
+        checked += 1;
+        let work: std::collections::BTreeMap<&str, &str> = binding.work.iter().copied().collect();
+        for key in ["algo", "format", "challenge", "difficulty", "submit"] {
+            assert!(
+                work.contains_key(key),
+                "pow binding {} has no work.{key}",
+                binding.name
+            );
+        }
+        assert!(
+            algos.iter().any(|a| a == work["algo"]),
+            "pow binding {} names algo {}, which is not in pow_algos",
+            binding.name,
+            work["algo"]
+        );
+        assert!(
+            formats.iter().any(|f| f == work["format"]),
+            "pow binding {} names format {}, which is not in pow_formats",
+            binding.name,
+            work["format"]
+        );
+        for key in ["challenge", "difficulty", "salt", "prefix"] {
+            let Some(address) = work.get(key) else {
+                continue;
+            };
+            assert!(
+                reads.iter().any(|form| address.starts_with(form.as_str())),
+                "pow binding {} reads work.{key} as {address}, which is no known address form",
+                binding.name
+            );
+        }
+        assert!(
+            submits
+                .iter()
+                .any(|form| work["submit"].starts_with(form.as_str())),
+            "pow binding {} submits to {}, which is no known address form",
+            binding.name,
+            work["submit"]
+        );
+    }
+    assert!(checked > 0, "no pow binding in the catalog to check");
+}
+
+/// The work table has to survive the trip to the engine. It arrives as JSON in
+/// `LURIEN_CHALLENGE`, and a table dropped there is a pow row the engine refuses.
+#[test]
+fn the_engine_config_carries_the_work_table_for_every_pow_binding() {
+    let config = lurien::challenge::ChallengeConfig::for_process();
+    let value: serde_json::Value =
+        serde_json::from_str(&config.to_env_value()).expect("config is json");
+    let rows = value["catalog"].as_array().expect("catalog array");
+    let mut checked = 0;
+    for row in rows {
+        if row["kind"] != "pow" {
+            continue;
+        }
+        checked += 1;
+        let work = row["work"].as_object().expect("pow row carries work");
+        for key in ["algo", "format", "challenge", "difficulty", "submit"] {
+            assert!(
+                work.get(key).and_then(|v| v.as_str()).is_some_and(|v| !v.is_empty()),
+                "pow row {} reached the engine without work.{key}: {row}",
+                row["name"]
+            );
+        }
+    }
+    assert!(checked > 0, "no pow row reached the engine config");
+}
+
+/// A slider is measured on one element and dragged on another. A binding that
+/// names only one of them drags the puzzle, which moves nothing on a live widget
+/// and produces a refusal that looks like a bad measurement.
+#[test]
+fn every_slider_binding_names_the_element_a_hand_grabs() {
+    let mut checked = 0;
+    for binding in lurien::catalog::CATALOG {
+        if binding.kind != "slider" {
+            continue;
+        }
+        checked += 1;
+        assert!(
+            !binding.handle.is_empty(),
+            "slider binding {} names no handle, so the drag would start on the puzzle",
+            binding.name
+        );
+        assert_ne!(
+            binding.handle, binding.target,
+            "slider binding {} drags the element it measures",
+            binding.name
+        );
+    }
+    assert!(checked > 0, "no slider binding in the catalog to check");
+}
+
+/// The handle has to reach the engine, which reads it out of `LURIEN_CHALLENGE`.
+#[test]
+fn the_engine_config_carries_the_handle_for_every_slider_binding() {
+    let config = lurien::challenge::ChallengeConfig::for_process();
+    let value: serde_json::Value =
+        serde_json::from_str(&config.to_env_value()).expect("config is json");
+    let mut checked = 0;
+    for row in value["catalog"].as_array().expect("catalog array") {
+        if row["kind"] != "slider" {
+            continue;
+        }
+        checked += 1;
+        assert!(
+            row["handle"].as_str().is_some_and(|v| !v.is_empty()),
+            "slider row {} reached the engine without a handle: {row}",
+            row["name"]
+        );
+    }
+    assert!(checked > 0, "no slider row reached the engine config");
+}
+
+/// Is this something the engine's `#locate` can resolve?
+///
+/// A form from `target_forms`, or a CSS selector, which is any value with no
+/// space in it. Prose describing an element is not executable, and a binding whose
+/// kind this build claims must be executable or the solve fails on a live page
+/// with "target not found".
+fn executable_target(value: &str, forms: &[String]) -> bool {
+    !value.is_empty()
+        && (forms.iter().any(|form| value.starts_with(form.as_str()))
+            || !value.contains(' '))
+}
+
+/// Claiming a kind means the engine drives it. A claimed binding whose target is
+/// prose passes every other test in this file and then finds nothing on the page,
+/// which is the failure this closes for every claimed kind at once, not only for
+/// the one that prompted it.
+#[test]
+fn every_claimed_binding_names_a_target_the_engine_can_resolve() {
+    let forms = schema_list("target_forms");
+    assert!(!forms.is_empty(), "_schema.toml lists no target_forms");
+    let claimed = lurien::challenge::CLAIMED_KINDS;
+    let mut checked = 0;
+    for binding in lurien::catalog::CATALOG {
+        if !claimed.contains(&binding.kind) {
+            continue;
+        }
+        // `score` is decided before paint: there is no element to act on, and the
+        // binding says so in prose on purpose.
+        if binding.kind == "score" || binding.kind == "pow" {
+            continue;
+        }
+        checked += 1;
+        assert!(
+            executable_target(binding.target, &forms),
+            "{} is a claimed {} and its target {:?} is prose, not something the engine can resolve",
+            binding.name,
+            binding.kind,
+            binding.target
+        );
+        if !binding.handle.is_empty() {
+            assert!(
+                executable_target(binding.handle, &forms),
+                "{} is a claimed {} and its handle {:?} is prose",
+                binding.name,
+                binding.kind,
+                binding.handle
+            );
+        }
+    }
+    assert!(checked > 0, "no claimed interactive binding to check");
+}

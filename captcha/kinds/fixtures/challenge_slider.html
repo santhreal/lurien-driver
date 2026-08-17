@@ -1,0 +1,161 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>slide the piece</title>
+<!--
+  The `slider` fixture: a puzzle whose notch moves every load and whose handle
+  refuses a drag no hand would produce.
+
+  The token is written only when all of these hold:
+
+    - the piece lands within three pixels of the notch, so the offset came from
+      looking at the image rather than from a constant,
+    - every pointer event was trusted, so a dispatched MouseEvent is refused,
+    - the travel carries at least eight moves, uneven step sizes, and one
+      direction reversal, so a straight constant-speed drag is refused even when
+      it lands on the right pixel,
+    - the travel took at least 80 ms, so a teleport is refused.
+
+  The handle is a separate element from the puzzle, as it is on a real deployment:
+  the engine crops the puzzle to find the offset and drags the handle to apply it.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 14px; background: #fff; }
+  #puzzle { display: block; border: 1px solid #bbb; }
+  #track {
+    width: 320px; height: 26px; margin-top: 10px; border: 1px solid #bbb;
+    position: relative; background: #f4f4f4;
+  }
+  #handle {
+    position: absolute; left: 0; top: 0; width: 34px; height: 24px;
+    background: #4a7; cursor: grab;
+  }
+  #state { margin-top: 8px; }
+</style>
+
+<canvas id="puzzle" width="320" height="140"></canvas>
+<div id="track"><div id="handle"></div></div>
+<input type="hidden" name="fixture-token" value="">
+<div id="state">waiting</div>
+
+<script>
+  const canvas = document.getElementById("puzzle");
+  const ctx = canvas.getContext("2d");
+  const handle = document.getElementById("handle");
+  const track = document.getElementById("track");
+  const token = document.querySelector('input[name="fixture-token"]');
+  const state = document.getElementById("state");
+
+  const PIECE = 34;
+  const PIECE_HOME = 10;
+  const TOP = 52;
+  // The notch is somewhere in the right two thirds, minted per load. A solver
+  // that remembers a number from the last run is worth nothing here.
+  const gapX = 120 + Math.floor(Math.random() * 150);
+  let pieceX = PIECE_HOME;
+
+  function draw() {
+    // A soft vertical gradient: no vertical edges of its own, so the only
+    // vertical edges in the crop are the piece and the notch.
+    const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    sky.addColorStop(0, "#dfe6ee");
+    sky.addColorStop(1, "#b9c4cf");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // The notch: a hole in the background.
+    ctx.fillStyle = "rgba(20, 24, 30, 0.55)";
+    ctx.fillRect(gapX, TOP, PIECE, PIECE);
+    // The piece: the shape that has to end up in the hole.
+    ctx.fillStyle = "#2b3038";
+    ctx.fillRect(pieceX, TOP, PIECE, PIECE);
+  }
+  draw();
+
+  let dragging = false;
+  let originX = 0;
+  let startedAt = 0;
+  let untrusted = false;
+  const xs = [];
+
+  handle.addEventListener("mousedown", event => {
+    if (!event.isTrusted) {
+      untrusted = true;
+      return;
+    }
+    dragging = true;
+    originX = event.clientX;
+    startedAt = performance.now();
+    xs.length = 0;
+    state.textContent = "dragging";
+  });
+
+  addEventListener("mousemove", event => {
+    if (!dragging) {
+      return;
+    }
+    if (!event.isTrusted) {
+      untrusted = true;
+      return;
+    }
+    const delta = event.clientX - originX;
+    xs.push(delta);
+    pieceX = Math.max(0, Math.min(canvas.width - PIECE, PIECE_HOME + delta));
+    handle.style.left = `${Math.max(0, Math.min(track.clientWidth - PIECE, delta))}px`;
+    draw();
+  });
+
+  /** Is this travel something a hand could have produced? */
+  function humanTravel() {
+    if (xs.length < 8) {
+      return `only ${xs.length} moves`;
+    }
+    const steps = [];
+    for (let i = 1; i < xs.length; i++) {
+      steps.push(xs[i] - xs[i - 1]);
+    }
+    const moving = steps.filter(s => s !== 0).map(Math.abs);
+    if (!moving.length) {
+      return "the pointer never moved";
+    }
+    const spread = Math.max(...moving) / Math.min(...moving);
+    if (spread < 2) {
+      return `constant speed (spread ${spread.toFixed(2)})`;
+    }
+    let reversals = 0;
+    for (let i = 1; i < steps.length; i++) {
+      if (steps[i] !== 0 && steps[i - 1] !== 0 && Math.sign(steps[i]) !== Math.sign(steps[i - 1])) {
+        reversals += 1;
+      }
+    }
+    if (reversals < 1) {
+      return "no correction: the pointer went one way and stopped";
+    }
+    const elapsed = performance.now() - startedAt;
+    if (elapsed < 80) {
+      return `${Math.round(elapsed)} ms is a teleport`;
+    }
+    return null;
+  }
+
+  addEventListener("mouseup", event => {
+    if (!dragging) {
+      return;
+    }
+    dragging = false;
+    if (!event.isTrusted || untrusted) {
+      state.textContent = "refused: untrusted pointer";
+      return;
+    }
+    const complaint = humanTravel();
+    if (complaint) {
+      state.textContent = `refused: ${complaint}`;
+      return;
+    }
+    const off = Math.abs(pieceX - gapX);
+    if (off > 3) {
+      state.textContent = `wrong: ${off}px from the notch`;
+      return;
+    }
+    token.value = `fixture-slider-${gapX}-${off}`;
+    state.textContent = "solved";
+  });
+</script>

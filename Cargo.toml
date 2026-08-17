@@ -11,6 +11,7 @@ members = [
     "foxdriver",
     "echo",
     "lurien",
+    "captcha/vision",
 ]
 
 [workspace.dependencies]

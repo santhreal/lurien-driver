@@ -6,5 +6,7 @@ iframe_src = ["geetest.com", "static.geetest.com"]
 custom_elements = []
 selectors = [".geetest_slider_button", ".geetest_panel"]
 
-target = "slider handle in this BC"
+# The puzzle is a canvas; the button under it is what a hand drags.
+target = "first canvas in this BC"
+handle = ".geetest_slider_button"
 token = { hidden_input = "geetest_challenge", verify_field = "geetest_validate" }

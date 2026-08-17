@@ -20,3 +20,44 @@ vendor_fields = [
     "target",
     "token",
 ]
+
+# A `slider` binding also carries `handle`: the element a hand grabs, when that is
+# not the element being measured. The crop comes from `target` and the drag starts
+# on `handle`, because dragging the puzzle itself moves nothing on a live widget.
+
+# Target language the engine can execute. `target` and `handle` on a binding whose
+# kind this build claims must be one of these forms, or a CSS selector, which the
+# registry test recognizes as a value with no spaces in it. Prose is allowed only
+# on a kind nothing acts on yet, where it records what the element would be.
+target_forms = [
+    "first checkbox",
+    "first canvas",
+    "first draggable",
+    "role:",
+]
+
+# A `pow` binding also carries a [work] table. Proof of work is arithmetic, not
+# perception: the binding says where to read the challenge, how hard it is, and
+# where the answer goes, and the browser does the rest with no helper process.
+#
+#   algo        one of pow_algos
+#   format      one of pow_formats: how difficulty is counted
+#   challenge   address of the challenge string
+#   difficulty  address of the difficulty, or a literal integer
+#   salt        optional address of a salt joined before the nonce
+#   submit      address the answer is written to
+#
+# Addresses: `global:a.b.c` reads a page global, `attr:<css>@<name>` reads an
+# attribute, `text:<css>` reads text content, `lit:<value>` is a literal.
+# Submit addresses: `field:<css>` types into a field, `call:a.b.c` calls a page
+# function with {nonce, hash}, `url:<template>` navigates with {nonce} and {hash}
+# substituted.
+
+pow_algos = ["sha256"]
+pow_formats = ["hex-zeros", "bits"]
+
+# Address forms the engine implements. The registry test reads these at run time,
+# so a vendor that invents a form no primitive can execute is red before a page
+# ever sees it.
+work_read_forms = ["global:", "attr:", "text:", "lit:"]
+work_submit_forms = ["field:", "call:", "url:"]

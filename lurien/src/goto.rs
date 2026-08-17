@@ -158,7 +158,12 @@ async fn classify_with_score_wait(
         // settles. A page the probe called a challenge waits for the engine,
         // which may still be clicking.
         if let Some(kind) = page_kind {
-            let engine_could_still_report = !matches!(kind, ChallengeKind::None)
+            // A page the engine took is not decided by the probe. The probe cannot
+            // see into the widget's own context, so it calls a page being solved
+            // clean, and returning that closes the session mid-solve.
+            let engine_busy = crate::challenge::taken(evidence, url);
+            let engine_could_still_report = (engine_busy
+                || !matches!(kind, ChallengeKind::None))
                 && elapsed_ms < ENGINE_WAIT_MS;
             if !engine_could_still_report {
                 return Ok((kind, None));
