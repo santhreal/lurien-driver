@@ -144,3 +144,64 @@ fn the_engine_stamps_the_version_the_driver_reads() {
         lurien::challenge::EVIDENCE_VERSION
     );
 }
+
+/// A frozen array in the engine, read as a list of names.
+fn js_string_list(source: &str, name: &str) -> Vec<String> {
+    let needle = format!("export const {name} = Object.freeze([");
+    let index = source
+        .find(&needle)
+        .unwrap_or_else(|| panic!("Kinds.sys.mjs declares {name}"));
+    let rest = &source[index + needle.len()..];
+    let end = rest.find("])").expect("the array closes");
+    rest[..end]
+        .split(',')
+        .map(|item| item.trim().trim_matches('"').to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
+/// Reduction picks the kind that gates the page, so every kind needs a rank.
+///
+/// A kind with no rank sorts last, which is below `none`: adding a kind and
+/// forgetting the severity table would make the new kind lose to a checkbox
+/// beside it on the same page and never be acted on. That failure is invisible
+/// on a page with one widget, so the table is held complete here instead.
+#[test]
+fn every_kind_has_a_place_in_the_order_that_gates_a_page() {
+    let dir = additions();
+    if !dir.is_dir() {
+        return;
+    }
+    let source = fs::read_to_string(dir.join("Kinds.sys.mjs")).expect("Kinds.sys.mjs");
+    let kinds = js_string_list(&source, "KINDS");
+    let severity = js_string_list(&source, "KIND_SEVERITY");
+    assert_eq!(
+        kinds.iter().collect::<BTreeSet<_>>(),
+        severity.iter().collect::<BTreeSet<_>>(),
+        "KIND_SEVERITY and KINDS name different kinds: {kinds:?} against {severity:?}"
+    );
+    assert_eq!(
+        severity.len(),
+        kinds.len(),
+        "KIND_SEVERITY names a kind twice: {severity:?}"
+    );
+    assert_eq!(
+        severity.first().map(String::as_str),
+        Some("fail"),
+        "a page that already failed is the most severe thing on it: {severity:?}"
+    );
+    assert_eq!(
+        severity.last().map(String::as_str),
+        Some("none"),
+        "no challenge must rank below every challenge: {severity:?}"
+    );
+    // An interactive kind outranks a passive one: a score resolves itself while a
+    // widget stays in the way, so a page holding both is a widget page.
+    let rank = |kind: &str| severity.iter().position(|item| item == kind);
+    for interactive in ["visual", "audio", "slider", "pow", "checkbox"] {
+        assert!(
+            rank(interactive) < rank("score"),
+            "{interactive} does not outrank score: {severity:?}"
+        );
+    }
+}

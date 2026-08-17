@@ -64,6 +64,15 @@
   page. The protocol is documented with its version in `docs/HELPERS.md`.
 - `lurien::token::session_token` is the one minter for both loopback channels, the
   control socket and the helper, so neither can grow a weaker token of its own.
+- A page with two challenges is solved at the one that gates it. Classification and
+  reduction are ordered by kind severity rather than by how many signals a binding
+  matched, so a checkbox beside a slider is a slider page: clearing the checkbox
+  costs one click and leaves the puzzle in the way. Because a page's frames report in
+  load order, the first sighting now opens a short settle window
+  (`sighting_settle_ms`) instead of starting the work, which is what lets a widget
+  that attaches after paint be seen before the kind is fixed. Every widget any
+  context of the page held is reported, in the evidence row and from `goto`, so a
+  caller can tell a page with one widget from a page where a second was passed over.
 - The `pow` kind is solved in the browser with no helper process. The binding's
   `[work]` table says where the challenge and difficulty live and where the answer
   goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by

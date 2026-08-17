@@ -65,6 +65,15 @@ const KIND_BUDGET_MS: &[(&str, u64)] = &[
     ("pow", 45_000),
 ];
 
+/// How long the first sighting of a page waits for the page's other contexts
+/// before the engine fixes the kind and starts working.
+///
+/// A page's frames report in load order. A page that holds a cheap widget above
+/// the one that gates it would otherwise be taken on the first sighting, and the
+/// visit would end with the gate untouched. This is paid once per challenge page,
+/// out of [`BUDGET_MS`], and is noise beside any solve.
+const SIGHTING_SETTLE_MS: u64 = 600;
+
 /// Points in one approach path. Enough curvature to carry the corpus shape,
 /// short enough that the whole path is one event burst.
 const PATH_POINTS: usize = 24;
@@ -75,6 +84,23 @@ const PATH_POINTS: usize = 24;
 /// take before a shape repeats. A dozen covers a grid solve; the deck is sampled
 /// once at launch, so a larger one costs launch time for motion no page uses.
 const DECK: usize = 12;
+
+/// One widget a page held, whether or not the engine acted on it.
+///
+/// A page can carry two challenges, and the engine solves the one that gates it.
+/// Naming only that one leaves a caller unable to tell a page with a single
+/// widget from a page where a second one was passed over on purpose.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeenWidget {
+    /// Kind of the widget, from the binding that matched it.
+    pub kind: String,
+    /// Vendor binding that matched.
+    pub vendor: String,
+    /// How many of that binding's signals the page satisfied.
+    pub signals: u64,
+    /// How this widget was already cleared, when it was.
+    pub cleared: Option<String>,
+}
 
 /// What the engine reported for one page.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +119,8 @@ pub struct EngineOutcome {
     pub error: Option<String>,
     /// Browsing contexts the observer attached to for this page.
     pub contexts: u64,
+    /// Every widget any context of the page held, most severe first.
+    pub seen: Vec<SeenWidget>,
     /// Page the row belongs to.
     pub url: String,
 }
@@ -214,6 +242,7 @@ impl ChallengeConfig {
             "evidence": self.evidence.display().to_string(),
             "budget_ms": self.budget_ms,
             "kind_budget_ms": kind_budget_json(),
+            "sighting_settle_ms": SIGHTING_SETTLE_MS,
             "claimed_kinds": CLAIMED_KINDS,
             "dynamics_seed": seed,
             "trajectory_deck": deck(seed, TRAJECTORY_SALT, approach_path),
@@ -639,12 +668,39 @@ fn parse_row(row: &serde_json::Value) -> Option<EngineOutcome> {
             .get("contexts")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0),
+        seen: parse_seen(row.get("seen")),
         url: row
             .get("url")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_string(),
     })
+}
+
+/// The widgets a row names. A row that names none is a page with one widget from
+/// a build before the field existed, not a page with nothing on it, so the list
+/// is left empty rather than invented from the row's own kind.
+fn parse_seen(value: Option<&serde_json::Value>) -> Vec<SeenWidget> {
+    let Some(entries) = value.and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            Some(SeenWidget {
+                kind: entry.get("kind")?.as_str()?.to_string(),
+                vendor: entry.get("vendor")?.as_str()?.to_string(),
+                signals: entry
+                    .get("signals")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0),
+                cleared: entry
+                    .get("cleared")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -713,6 +769,31 @@ mod tests {
             serde_json::from_str(&ChallengeConfig::for_process().to_env_value())
                 .expect("config is json");
         assert_eq!(shipped["kind_budget_ms"], table);
+    }
+
+    /// A page's frames report in load order, so the engine holds the page open for
+    /// a moment before it fixes the kind. The window has to be long enough to be
+    /// worth having and short enough that it is not a budget of its own: it is paid
+    /// on every challenge page, before any work starts.
+    #[test]
+    fn a_page_is_held_open_for_its_other_frames_and_no_longer() {
+        let shipped: serde_json::Value =
+            serde_json::from_str(&ChallengeConfig::for_process().to_env_value())
+                .expect("config is json");
+        let settle = shipped["sighting_settle_ms"]
+            .as_u64()
+            .expect("the config names a settle window");
+        assert_eq!(settle, SIGHTING_SETTLE_MS);
+        assert!(settle > 0, "a window of nothing is the load-order bug back");
+        let smallest = KIND_BUDGET_MS
+            .iter()
+            .map(|(_, ms)| *ms)
+            .min()
+            .expect("a kind budget");
+        assert!(
+            settle * 4 < smallest,
+            "waiting {settle}ms eats the {smallest}ms budget of the fastest kind"
+        );
     }
 
     /// A helper reachable without a token is a perception service every process on
@@ -1148,6 +1229,48 @@ mod tests {
         std::fs::write(&path, format!("{{{body}}}\n").replace("a.test", "b.test"))
             .expect("write evidence");
         assert_eq!(verdict(&path, "https://a.test/", 0), Verdict::Pending);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A page can hold two widgets, and the engine acts on the one that gates it.
+    /// The row names both, so a caller can tell a page with one widget from a page
+    /// where a second was passed over. A row from a build that wrote no list is
+    /// not a page with nothing on it, so nothing is invented for it.
+    #[test]
+    fn a_row_names_every_widget_the_page_held() {
+        let dir = std::env::temp_dir().join(format!("lurien-evidence-seen-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("evidence.jsonl");
+        let row = r#"{"kind":"slider","vendor":"a","solved":true,"via":"field","ms":900,
+            "url":"https://a.test/","contexts":3,
+            "seen":[{"kind":"slider","vendor":"a","signals":1,"cleared":null},
+                    {"kind":"checkbox","vendor":"b","signals":2,"cleared":"token:t"},
+                    {"vendor":"nameless","signals":9}]}"#;
+        std::fs::write(&path, format!("{}\n", stamped(row))).expect("write evidence");
+        let found = reported(&path, "https://a.test/", 0).expect("the row");
+        assert_eq!(found.kind, "slider", "the acted-on kind is the row's kind");
+        assert_eq!(
+            found
+                .seen
+                .iter()
+                .map(|w| (w.kind.as_str(), w.vendor.as_str(), w.signals))
+                .collect::<Vec<_>>(),
+            vec![("slider", "a", 1), ("checkbox", "b", 2)],
+            "an entry with no kind is not a widget: {:?}",
+            found.seen
+        );
+        assert_eq!(found.seen[1].cleared.as_deref(), Some("token:t"));
+        assert_eq!(found.seen[0].cleared, None);
+
+        let bare = r#"{"kind":"checkbox","vendor":"a","solved":true,"via":"field","ms":10,
+            "url":"https://a.test/","contexts":1}"#;
+        std::fs::write(&path, format!("{}\n", stamped(bare))).expect("write evidence");
+        let found = reported(&path, "https://a.test/", 0).expect("the row");
+        assert!(
+            found.seen.is_empty(),
+            "a widget list was invented for a row that named none: {:?}",
+            found.seen
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

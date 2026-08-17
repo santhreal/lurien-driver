@@ -150,3 +150,23 @@ broken looks like:
   runs on the page budget and the test red; paying for the visit out of the kind
   budget cut the read to 558ms and the test red; a driver that ships no table turned
   the unit test that holds the table against the claimed kinds red.
+
+The `classify` fixture rules out a page solved at the wrong widget. It holds a
+checkbox and a slider, both cross-origin, and the checkbox binding matches two
+signals against the slider's one, so signal count and severity disagree:
+
+- The puzzle frame gets its source 250 ms after paint, the way a vendor loader
+  that chooses a widget does, so the cheap widget is the first context to report.
+- Phase one gives each binding elements that exist only inside its own frame, so
+  every context holds one candidate and the kind is decided when the contexts are
+  merged. Phase two gives both bindings elements of the top document alone, so one
+  context holds both candidates and no merge can repair a wrong choice.
+- Measured on 2026-08-17 against engine 150.0.2-beta.25 and driver 0.1.0: the page
+  was reported as `slider`, solved by dragging 170.0 px in 20 moves, and the row
+  named both widgets, the slider first.
+- Five mutations were checked. Reducing across contexts by signal count solved the
+  checkbox and left the puzzle standing, and the test red; classifying inside one
+  context by signal count reported that context as `checkbox`, and the test red;
+  acting on the first sighting rather than opening the settle window took the page
+  as `checkbox`, and the test red; a settle window of nothing did the same; a row
+  that names only the widget the engine acted on turned the second claim red.

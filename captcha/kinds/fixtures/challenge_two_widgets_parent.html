@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>page with two challenges</title>
+<!--
+  A page that holds two widgets of different kinds at once.
+
+  Real deployments do this: a form sits behind a checkbox widget while the
+  submit path is gated by a puzzle, or a tag manager loads a second vendor
+  beside the first. Both are cross-origin, so each gets its own browsing
+  context and neither can be read from here.
+
+  The puzzle is what gates the page: clearing the checkbox costs one click and
+  leaves the puzzle exactly where it was, so an engine that spends the page's
+  budget on the cheaper widget ends the visit with the page still unusable.
+
+  SLIDER_URL and CHECKBOX_URL are substituted by lurien/tests/e2e_classify.sh.
+-->
+<style>
+  body { font: 14px system-ui; margin: 0; padding: 24px; }
+  iframe { border: 1px solid #ccc; display: block; margin: 12px 0; }
+  #slider-frame { width: 360px; height: 240px; }
+  #checkbox-frame { width: 320px; height: 70px; }
+</style>
+
+<h1>Verification required</h1>
+<form id="form">
+  <label>Email <input id="email" name="email" type="email" value="fixture@example.test"></label>
+  <iframe id="checkbox-frame" src="CHECKBOX_URL" title="checkbox widget"></iframe>
+  <iframe id="slider-frame" data-src="SLIDER_URL" title="slider widget"></iframe>
+  <button type="submit">Continue</button>
+</form>
+<div id="gate">the puzzle gates this page</div>
+
+<script>
+  // Both tokens live in their own contexts and neither is readable from here,
+  // which is the point of the fixture: the parent cannot tell which widget was
+  // solved, and only the vendor's own origin can. Submitting proves nothing, so
+  // it does nothing.
+  document.getElementById("form").addEventListener("submit", event => {
+    event.preventDefault();
+  });
+
+  // The puzzle loads after paint, the way a vendor loader that decides which
+  // widget to show does. The checkbox frame is therefore the first context to
+  // report, and an engine that acted on the first thing it saw would spend the
+  // page on the cheaper widget before the one that gates it existed.
+  setTimeout(() => {
+    const frame = document.getElementById("slider-frame");
+    frame.src = frame.dataset.src;
+  }, 250);
+
+  // Recorded for the same reason the single-widget fixtures record it: reaching
+  // into either widget must throw, or the fixture is not cross-origin and proves
+  // nothing about the contexts the engine had to reach.
+  window.fixtureParentCanSeeWidget = (() => {
+    for (const frame of document.querySelectorAll("iframe")) {
+      try {
+        if (frame.contentDocument?.body) {
+          return true;
+        }
+      } catch (e) {
+        // Cross-origin, as intended.
+      }
+    }
+    return false;
+  })();
+</script>

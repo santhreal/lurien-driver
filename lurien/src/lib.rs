@@ -53,7 +53,7 @@ use runtime_foxdriver::{CapturedCookie, FrameId, Page};
 
 pub use as_profile::as_profile;
 pub use error::Error;
-pub use challenge::{ChallengeConfig, EngineOutcome};
+pub use challenge::{ChallengeConfig, EngineOutcome, SeenWidget};
 pub use clock::Reading as ClockReading;
 pub use control::Control;
 pub use geo::{Geolocation, Position};
