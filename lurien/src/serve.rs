@@ -648,36 +648,69 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             args.set("script", format!("window.resizeTo({w}, {h})"));
             "eval"
         }
-        "dom_set_extra_headers" => {
-            // Extra headers are passed as JSON; stored in args for the session.
-            let headers = command.arg("headers").unwrap_or("{}");
-            args.set("headers", headers);
-            "set-extra-headers"
+        // Routes: the engine applies these on the channel. Legacy header and
+        // interception names land on the route that does what they claimed to.
+        "route" | "routes" | "dom_get_headers" => "route",
+        "route_clear" | "dom_clear_intercepts" => "route-clear",
+        "route_fulfil" | "route_fulfill" | "dom_intercept_response" => {
+            args.set("pattern", command.arg("pattern").ok_or("pattern is required")?);
+            if let Some(value) = command.arg("headers") {
+                args.set("headers", value);
+            }
+            if let Some(value) = command.arg("body") {
+                args.set("body", value);
+            }
+            if let Some(value) = command.any_arg(&["status", "status_code"]) {
+                args.set("status", parse_i64(value, "status")?);
+            }
+            if let Some(value) = command.any_arg(&["status_text", "reason"]) {
+                args.set("status_text", value);
+            }
+            "route-fulfil"
         }
-        // Request/response interception and header manipulation.
-        "dom_get_headers" => "get-headers",
-        "dom_set_header" => {
-            args.set("name", command.arg("name").ok_or("name is required")?);
-            args.set("value", command.arg("value").unwrap_or(""));
-            "set-header"
+        "route_abort" | "dom_abort_request" => {
+            args.set("pattern", command.arg("pattern").ok_or("pattern is required")?);
+            "route-abort"
         }
-        "dom_delete_header" => {
-            args.set("name", command.arg("name").ok_or("name is required")?);
-            "delete-header"
+        "route_continue" | "dom_set_extra_headers" => {
+            if let Some(value) = command.arg("pattern") {
+                args.set("pattern", value);
+            }
+            if let Some(value) = command.arg("headers") {
+                args.set("headers", value);
+            }
+            if let Some(value) = command.any_arg(&["remove", "remove_headers"]) {
+                args.set("remove", value);
+            }
+            "route-continue"
         }
+        // A request route with a body is a fulfil; without one it is a header edit.
         "dom_intercept_request" => {
             args.set("pattern", command.arg("pattern").ok_or("pattern is required")?);
-            if let Some(h) = command.arg("headers") { args.set("headers", h); }
-            if let Some(b) = command.arg("body") { args.set("body", b); }
-            "intercept-request"
+            if let Some(value) = command.arg("headers") {
+                args.set("headers", value);
+            }
+            match command.arg("body") {
+                Some(body) => {
+                    args.set("body", body);
+                    "route-fulfil"
+                }
+                None => "route-continue",
+            }
         }
-        "dom_intercept_response" => {
-            args.set("pattern", command.arg("pattern").ok_or("pattern is required")?);
-            if let Some(h) = command.arg("headers") { args.set("headers", h); }
-            if let Some(b) = command.arg("body") { args.set("body", b); }
-            "intercept-response"
+        "dom_set_header" => {
+            let name = command.arg("name").ok_or("name is required")?;
+            let value = command.arg("value").unwrap_or("");
+            args.set(
+                "headers",
+                serde_json::json!({ name: value }).to_string(),
+            );
+            "route-continue"
         }
-        "dom_clear_intercepts" => "clear-intercepts",
+        "dom_delete_header" => {
+            args.set("remove", command.arg("name").ok_or("name is required")?);
+            "route-continue"
+        }
         // DOM eval alias (same as dom_readonly_eval).
         "dom_eval" => {
             args.set("script", command.any_arg(&["code", "script"]).ok_or("code is required")?);

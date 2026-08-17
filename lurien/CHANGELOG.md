@@ -5,9 +5,9 @@
 - One verb registry behind three transports. `Session::call(verb, args)` is the only
   entry point; the CLI, `lurien-mcp`, and `lurien serve` generate their surfaces from
   the same `VerbSpec`, so none can offer a verb or argument the others lack.
-- 38 verbs across ten domains: `page`, `dom`, `input`, `frame`, `storage`, `state`,
-  `net`, `dialog`, `observe`, `profile`. One verb per file; a new verb is that file
-  plus one line in its domain's `SPECS`.
+- 63 verbs across thirteen domains: `page`, `dom`, `frame`, `input`, `state`, `storage`,
+  `net`, `intercept`, `dialog`, `observe`, `context`, `session`, `profile`. One verb per
+  file; a new verb is that file plus one line in its domain's `SPECS`.
 - `lurien serve` replaces the separate `guise-bridge` daemon and speaks the same wire
   protocol (`GET /v1/health`, `POST /v1/browser/command`, schema version 1). Legacy
   command names map onto verbs instead of being reimplemented, so an HTTP client and a
@@ -163,6 +163,21 @@
   `Date.name` and the source of `Date.now` are the native ones. Monotonic time,
   pending timers and workers stay on the host clock, deliberately: a shifted
   clock is a reader's view, not a fake event loop.
+- Real network interception. `route-fulfil` answers a URL glob from the browser,
+  `route-abort` cancels the request, `route-continue` edits its headers, `route`
+  reports the table with a count per route, and `route-clear` gives the network
+  back. Routes are applied on the channel in the engine's parent process, so a
+  fulfilled request never leaves the machine, an abort is a real network error to
+  the page, and a header edit reaches the server rather than a page global. The
+  table is set whole and the most recently added route is tried first, so a
+  caller narrows behaviour by adding a route. This replaces the seven-verb
+  `intercept` domain, which wrote to `navigator.__ahuraIntercepts` and
+  `navigator.__ahuraHeaders` and changed no request; the old wire names
+  (`dom_intercept_request`, `dom_intercept_response`, `dom_set_header`,
+  `dom_delete_header`, `dom_set_extra_headers`, `dom_get_headers`,
+  `dom_clear_intercepts`) now land on routes.
+- `eval` awaits a promise. An expression like `fetch(url)` returns its resolved
+  value instead of an opaque handle, so an async probe is one call.
 - A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
   `drag_profile` and `prelude` when it names none. Without this the engine fell
   back to a built-in constant, so every session moved identically.

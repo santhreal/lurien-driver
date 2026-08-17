@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>route fixture</title>
+</head>
+<body>
+<h1>route fixture</h1>
+<script>
+// One fetch, reported as data whatever happens: a route that fulfils, a route
+// that aborts, and a request that reached the network all have to be told apart
+// from the page's own point of view.
+window.lurienFetch = async (url, headers) => {
+  try {
+    const response = await fetch(url, { headers: headers || {}, cache: "no-store" });
+    return {
+      ok: true,
+      status: response.status,
+      statusText: response.statusText,
+      type: response.headers.get("content-type") || "",
+      trace: response.headers.get("x-served-by") || "",
+      body: await response.text(),
+    };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+};
+</script>
+</body>
+</html>

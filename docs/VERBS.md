@@ -49,7 +49,7 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 | Verb | Arguments | Output | Stability | Summary |
 |---|---|---|---|---|
 | `click-in` | `frame`, `selector` | text | stable | Click a selector inside a named frame, including a cross-origin one. |
-| `eval` | `script`, `frame?` | json | stable | Evaluate JavaScript in the main document or a named frame. |
+| `eval` | `script`, `frame?` | json | stable | Evaluate JavaScript in the main document or a named frame. An expression that returns a promise is awaited. |
 | `frame-tree` | - | json | stable | Browsing-context tree with parent and depth, including OOPIFs. |
 | `frames` | - | json | stable | List browsing contexts (main document and every iframe). |
 | `type-in` | `frame`, `selector`, `text` | text | stable | Focus a selector inside a named frame and type into it. |
@@ -130,10 +130,8 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 
 | Verb | Arguments | Output | Stability | Summary |
 |---|---|---|---|---|
-| `clear-intercepts` | - | text | preview | Clear all request/response interception rules. |
-| `delete-header` | `name` | text | preview | Delete a request header override. |
-| `get-headers` | - | json | preview | Get the request headers that would be sent on the next navigation. |
-| `intercept-request` | `pattern`, `headers?`, `body?` | text | preview | Intercept requests matching a URL pattern with header/body replacement. |
-| `intercept-response` | `pattern`, `headers?`, `body?` | text | preview | Intercept responses matching a URL pattern with header/body replacement. |
-| `set-extra-headers` | `headers` | text | preview | Set multiple extra request headers from a JSON object string. |
-| `set-header` | `name`, `value?` | text | preview | Set a request header override for subsequent navigations. |
+| `route` | - | json | stable | Report the route table in the order the engine tries it, with how many requests each route took. |
+| `route-abort` | `pattern` | json | stable | Cancel every request matching a URL glob. The page sees a network error, as it would offline. |
+| `route-clear` | - | json | stable | Drop every route, so requests reach the network untouched again. |
+| `route-continue` | `pattern?`, `headers?`, `remove?` | json | stable | Edit the request headers of every request matching a URL glob, then send it. Use * to reach every request. |
+| `route-fulfil` | `pattern`, `body?`, `status?`, `status_text?`, `headers?` | json | stable | Serve a response from the browser for every request matching a URL glob. The request never leaves the machine. |

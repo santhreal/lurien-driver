@@ -31,6 +31,8 @@ pub struct Session {
     opts: LaunchOptions,
     browser: Mutex<Option<Arc<Browser>>>,
     telemetry: Mutex<Option<Telemetry>>,
+    /// Routes this session has added, in the order the engine tries them.
+    routes: Mutex<Vec<crate::route::Route>>,
     /// Why this session has no position state, when it has none.
     geo_refusal: Option<String>,
 }
@@ -76,6 +78,7 @@ impl Session {
             opts,
             browser: Mutex::new(None),
             telemetry: Mutex::new(None),
+            routes: Mutex::new(Vec::new()),
             geo_refusal,
         }
     }
@@ -105,6 +108,52 @@ impl Session {
     /// [`Error::ControlUnavailable`] when no channel could be reserved.
     pub fn control(&self) -> Result<&crate::control::Control, Error> {
         Ok(self.geo()?.control())
+    }
+
+    /// Add a route, tried before every route added before it, and report the
+    /// whole table.
+    ///
+    /// The engine holds one table and tries it in order, so a new route is a
+    /// whole-table write. Most recent first means a caller narrows behaviour by
+    /// adding a route rather than by having to withdraw one.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable or
+    /// refuses the route, which leaves the session's table as it was.
+    pub async fn add_route(&self, route: crate::route::Route) -> Result<serde_json::Value, Error> {
+        let mut guard = self.routes.lock().await;
+        let mut next = Vec::with_capacity(guard.len() + 1);
+        next.push(route);
+        next.extend(guard.iter().cloned());
+        self.control()?
+            .set_routes(&crate::route::table_json(&next))
+            .await?;
+        *guard = next;
+        Ok(report(&guard, &self.control()?.routes().await?))
+    }
+
+    /// Forget every route this session added.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable.
+    pub async fn clear_routes(&self) -> Result<usize, Error> {
+        let mut guard = self.routes.lock().await;
+        self.control()?.clear_routes().await?;
+        let dropped = guard.len();
+        guard.clear();
+        Ok(dropped)
+    }
+
+    /// The route table in match order, with how many requests each route took.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable.
+    pub async fn route_report(&self) -> Result<serde_json::Value, Error> {
+        let guard = self.routes.lock().await;
+        Ok(report(&guard, &self.control()?.routes().await?))
     }
 
     /// Launch options this session will use.
@@ -184,6 +233,30 @@ impl Session {
             None => Ok(()),
         }
     }
+}
+
+/// One row per route, in match order, with the driver's detail and the engine's
+/// count. The engine reports the table it was given, so the two agree by
+/// position; a row the engine does not report is still shown, without a count,
+/// rather than dropped.
+fn report(routes: &[crate::route::Route], engine: &serde_json::Value) -> serde_json::Value {
+    let counted = engine.as_array().map(std::vec::Vec::as_slice).unwrap_or_default();
+    let rows: Vec<serde_json::Value> = routes
+        .iter()
+        .enumerate()
+        .map(|(index, route)| {
+            let mut row = route.row();
+            let hits = counted
+                .get(index)
+                .filter(|reported| reported.get("pattern") == Some(&serde_json::json!(route.pattern)))
+                .and_then(|reported| reported.get("hits").cloned());
+            if let (Some(hits), Some(map)) = (hits, row.as_object_mut()) {
+                map.insert("hits".to_string(), hits);
+            }
+            row
+        })
+        .collect();
+    serde_json::json!({ "routes": rows, "count": rows.len() })
 }
 
 /// Arm passive capture. A log that fails to start is empty, never absent, so a

@@ -37,6 +37,7 @@ pub mod mcp;
 pub mod permission;
 pub mod profile_import;
 pub mod resolve;
+pub mod route;
 pub mod serve;
 pub mod shot;
 pub mod session;

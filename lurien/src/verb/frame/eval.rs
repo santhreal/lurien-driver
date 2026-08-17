@@ -9,7 +9,7 @@ pub static SPEC: VerbSpec = VerbSpec {
     name: "eval",
     aliases: &["frame.eval"],
     domain: Domain::Frame,
-    summary: "Evaluate JavaScript in the main document or a named frame.",
+    summary: "Evaluate JavaScript in the main document or a named frame. An expression that returns a promise is awaited.",
     args: &[
         ArgSpec { name: "script", ty: ArgType::Str, required: true, default: None, help: "Expression to evaluate." },
         ArgSpec { name: "frame", ty: ArgType::Str, required: false, default: None, help: "Frame target: id, url substring, name, or main." },
@@ -26,15 +26,18 @@ fn call<'a>(session: &'a Session, args: &'a Args) -> VerbFuture<'a> {
 async fn run(session: &Session, args: &Args) -> Result<Output, Error> {
     let script = args.str("script")?;
     let browser = session.browser().await?;
+    // Promises are awaited: an expression like fetch(...) is the ordinary way to
+    // ask a page a question, and an opaque promise handle would make every async
+    // probe a two-step dance.
     let result = match args.opt_str("frame") {
         Some(spec) => browser
             .page()
-            .eval_in_frame(spec, script)
+            .eval_in_frame_await(spec, script)
             .await
             .map_err(|e| Error::Other(format!("eval in {spec}: {e}")))?,
         None => browser
             .page()
-            .evaluate(script)
+            .evaluate_await(script)
             .await
             .map_err(|e| Error::Other(format!("eval: {e}")))?,
     };

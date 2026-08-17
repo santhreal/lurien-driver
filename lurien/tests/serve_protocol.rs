@@ -85,6 +85,12 @@ const LEGACY_COMMANDS: &[&str] = &[
     "dom_intercept_request",
     "dom_intercept_response",
     "dom_clear_intercepts",
+    // Routes, under their own names.
+    "route",
+    "route_fulfil",
+    "route_abort",
+    "route_continue",
+    "route_clear",
     // DOM tool actions (eval-based).
     "dom_eval",
     "dom_check",

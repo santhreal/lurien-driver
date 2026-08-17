@@ -171,6 +171,45 @@ impl Control {
         Ok(field(&reply, "shift_ms").and_then(|value| value.as_i64()))
     }
 
+    /// Replace the whole route table. The engine tries the routes in the order
+    /// they are given and the first match wins, so the caller's order is the
+    /// precedence.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable, or when
+    /// it refuses a route it cannot apply.
+    pub async fn set_routes(&self, table: &str) -> Result<u64, Error> {
+        let reply = self.call("route.set", table).await?;
+        refused(&reply, "route.set")?;
+        Ok(field(&reply, "routes")
+            .and_then(|value| value.as_u64())
+            .unwrap_or_default())
+    }
+
+    /// Forget every route, so requests go out untouched again.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable.
+    pub async fn clear_routes(&self) -> Result<(), Error> {
+        let reply = self.call("route.clear", "{}").await?;
+        refused(&reply, "route.clear")?;
+        Ok(())
+    }
+
+    /// The routes the engine holds, in match order, with how many requests each
+    /// one has taken.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlUnavailable`] when the engine is not reachable.
+    pub async fn routes(&self) -> Result<serde_json::Value, Error> {
+        let reply = self.call("route.get", "{}").await?;
+        refused(&reply, "route.get")?;
+        Ok(field(&reply, "routes").unwrap_or_else(|| serde_json::json!([])))
+    }
+
     /// One request, one reply, connection closed.
     async fn call(&self, op: &str, params: &str) -> Result<String, Error> {
         let unreachable = |detail: String| Error::ControlUnavailable { detail };

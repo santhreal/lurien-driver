@@ -1,24 +1,23 @@
-//! Request/response interception and header manipulation.
-//! BiDi network interception is used where available; header manipulation
-//! falls back to eval-based overrides for request headers.
+//! What happens to a request before it is sent.
+//!
+//! A route is applied by the engine on the channel, in the parent process: the
+//! page cannot see it, cannot refuse it, and a fulfilled request never reaches
+//! the network. The table is ordered and the most recently added route is tried
+//! first, so a caller narrows behaviour by adding a route.
 
-mod clear;
-mod delete_header;
-mod get_headers;
-mod intercept_request;
-mod intercept_response;
-mod set_header;
-mod set_extra_headers;
+mod route;
+mod route_abort;
+mod route_clear;
+mod route_continue;
+mod route_fulfil;
 
 use crate::verb::VerbSpec;
 
-/// Registry entries for the interception domain.
+/// Verbs of this domain. A new verb is one line here plus its own file.
 pub static SPECS: &[&VerbSpec] = &[
-    &get_headers::SPEC,
-    &set_header::SPEC,
-    &delete_header::SPEC,
-    &set_extra_headers::SPEC,
-    &intercept_request::SPEC,
-    &intercept_response::SPEC,
-    &clear::SPEC,
+    &route::SPEC,
+    &route_abort::SPEC,
+    &route_clear::SPEC,
+    &route_continue::SPEC,
+    &route_fulfil::SPEC,
 ];

@@ -995,6 +995,18 @@ impl Page {
         self.evaluate_in_context(expr, &fid).await
     }
 
+    /// Evaluate `expr` inside the frame named by `spec`, awaiting the result if
+    /// it is a `Promise`. Same targeting as [`Self::eval_in_frame`]; use this
+    /// when the expression may be async.
+    pub async fn eval_in_frame_await(
+        &self,
+        spec: &str,
+        expr: impl Into<String>,
+    ) -> Result<EvaluationResult> {
+        let fid = self.resolve_frame(spec).await?;
+        self.evaluate_in_context_await(expr, &fid).await
+    }
+
     /// TRUSTED click on `selector` inside the frame named by `spec`.
     ///
     /// Resolves the element's centre in the frame's own viewport, then dispatches

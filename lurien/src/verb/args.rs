@@ -130,6 +130,17 @@ impl Args {
         }
     }
 
+    /// String list that may be absent, which reads as no items. A bare string
+    /// counts as one item and an empty string as none, so a face that fills
+    /// defaults in as text and a client that omits the key agree.
+    pub fn opt_str_list(&self, key: &str) -> Result<Vec<String>, Error> {
+        match self.map.get(key) {
+            None | Some(Value::Null) => Ok(Vec::new()),
+            Some(Value::String(s)) if s.trim().is_empty() => Ok(Vec::new()),
+            Some(_) => self.str_list(key),
+        }
+    }
+
     /// Reject unknown arguments, missing required ones, and type mismatches.
     /// Called by [`VerbSpec::call`], so no face can skip it.
     pub fn validate(&self, spec: &VerbSpec) -> Result<(), Error> {
