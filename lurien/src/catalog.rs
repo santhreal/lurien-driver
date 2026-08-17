@@ -34,6 +34,12 @@ pub struct VendorBinding {
     pub token_inputs: &'static [&'static str],
     /// Cookies the solved token is written into.
     pub token_cookies: &'static [&'static str],
+    /// Storage keys, in the widget's own origin, the solved token is written to.
+    pub token_storage: &'static [&'static str],
+    /// Dotted paths inside a message payload the widget posts to its page. A
+    /// vendor that answers by `postMessage` writes nothing down, so this is the
+    /// only channel on which its success can be observed.
+    pub token_messages: &'static [&'static str],
     /// `[work]` pairs for an arithmetic kind: where to read the challenge, how
     /// hard it is, and where the answer goes. Empty for a perceptual kind.
     pub work: &'static [(&'static str, &'static str)],
@@ -142,6 +148,8 @@ pub fn catalog_json() -> serde_json::Value {
                     "scripts": b.scripts,
                     "token_inputs": b.token_inputs,
                     "token_cookies": b.token_cookies,
+                    "token_storage": b.token_storage,
+                    "token_messages": b.token_messages,
                     "work": b.work
                         .iter()
                         .map(|(k, v)| ((*k).to_string(), serde_json::Value::from(*v)))
@@ -171,8 +179,12 @@ mod tests {
                 "{} cannot be recognized on a page",
                 binding.source
             );
+            let observable = !binding.token_inputs.is_empty()
+                || !binding.token_cookies.is_empty()
+                || !binding.token_storage.is_empty()
+                || !binding.token_messages.is_empty();
             assert!(
-                !binding.token_inputs.is_empty() || !binding.token_cookies.is_empty(),
+                observable,
                 "{} has no token hook, so a solve could never be proven",
                 binding.source
             );

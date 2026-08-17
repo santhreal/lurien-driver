@@ -129,7 +129,11 @@ echo "evidence: $(cat "$evidence")"
 python3 - "$evidence" <<'PY'
 import json, sys
 rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
-row = [r for r in rows if "solved" in r][-1]
+verdicts = [r for r in rows if "solved" in r]
+if not verdicts:
+    print(f"FAIL: the engine reported no verdict for the page: {rows}")
+    sys.exit(1)
+row = verdicts[-1]
 
 
 def need(cond, msg):

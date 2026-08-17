@@ -57,6 +57,9 @@ struct Binding {
     signals: BTreeMap<String, Vec<String>>,
     token_inputs: Vec<String>,
     token_cookies: Vec<String>,
+    /// Storage keys and message payload paths, for a vendor that answers there.
+    token_storage: Vec<String>,
+    token_messages: Vec<String>,
     /// `[work]` for an arithmetic kind: addresses, not values. Empty otherwise.
     work: BTreeMap<String, String>,
 }
@@ -70,6 +73,8 @@ fn parse(path: &Path) -> Binding {
     let mut signals: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut token_inputs = Vec::new();
     let mut token_cookies = Vec::new();
+    let mut token_storage = Vec::new();
+    let mut token_messages = Vec::new();
     let mut work: BTreeMap<String, String> = BTreeMap::new();
     let mut section = String::new();
 
@@ -104,6 +109,13 @@ fn parse(path: &Path) -> Binding {
                 if let Some(found) = inline_field(value, "cookie") {
                     token_cookies.push(found);
                 }
+                // A vendor that answers in storage or by message writes no field.
+                if let Some(found) = inline_field(value, "storage") {
+                    token_storage.push(found);
+                }
+                if let Some(found) = inline_field(value, "message") {
+                    token_messages.push(found);
+                }
             }
             ("signals", _) => {
                 signals.insert(key.to_string(), array(value));
@@ -124,6 +136,8 @@ fn parse(path: &Path) -> Binding {
         signals,
         token_inputs,
         token_cookies,
+        token_storage,
+        token_messages,
         work,
     }
 }
@@ -183,7 +197,7 @@ fn write_binding(out: &mut String, binding: &Binding, path: &Path) {
     work.push(']');
     let _ = writeln!(
         out,
-        "    VendorBinding {{ name: {:?}, kind: {:?}, source: {:?}, target: {:?}, handle: {:?}, iframe_src: {}, custom_elements: {}, selectors: {}, cookies: {}, scripts: {}, token_inputs: {}, token_cookies: {}, work: {} }},",
+        "    VendorBinding {{ name: {:?}, kind: {:?}, source: {:?}, target: {:?}, handle: {:?}, iframe_src: {}, custom_elements: {}, selectors: {}, cookies: {}, scripts: {}, token_inputs: {}, token_cookies: {}, token_storage: {}, token_messages: {}, work: {} }},",
         binding.name,
         binding.kind,
         path.file_name().and_then(|s| s.to_str()).unwrap_or_default(),
@@ -196,6 +210,8 @@ fn write_binding(out: &mut String, binding: &Binding, path: &Path) {
         list("scripts"),
         strings(&binding.token_inputs),
         strings(&binding.token_cookies),
+        strings(&binding.token_storage),
+        strings(&binding.token_messages),
         work,
     );
 }

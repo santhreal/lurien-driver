@@ -540,3 +540,57 @@ fn every_claimed_binding_names_a_target_the_engine_can_resolve() {
     }
     assert!(checked > 0, "no claimed interactive binding to check");
 }
+
+/// A `token` table is how a solve becomes observable, so a key nobody reads is a
+/// vendor whose success can never be seen. The failure is silent on a live page:
+/// the widget clears, nothing is observed, and the run is reported as refused. So
+/// every key a binding names is checked against the schema, and every channel the
+/// schema lists is checked against the parser that has to read it.
+#[test]
+fn every_token_channel_a_binding_names_is_one_the_engine_reads() {
+    let channels = schema_list("token_channels");
+    let build = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("build.rs"),
+    )
+    .expect("build.rs");
+    for channel in &channels {
+        assert!(
+            build.contains(&format!("\"{channel}\"")),
+            "the schema lists token channel {channel} and build.rs never reads it"
+        );
+    }
+    let mut checked = 0;
+    for path in vendor_files() {
+        let raw = fs::read_to_string(&path).expect("vendor toml");
+        for line in raw.lines() {
+            let line = line.trim();
+            let Some(rest) = line.strip_prefix("token") else {
+                continue;
+            };
+            let Some(rest) = rest.trim_start().strip_prefix('=') else {
+                continue;
+            };
+            let inner = rest.trim().trim_start_matches('{').trim_end_matches('}');
+            let mut named = 0;
+            for pair in inner.split(',') {
+                let Some((key, _)) = pair.split_once('=') else {
+                    continue;
+                };
+                let key = key.trim();
+                assert!(
+                    channels.contains(&key.to_string()),
+                    "{} names token channel {key}, which the schema does not list",
+                    path.display()
+                );
+                named += 1;
+            }
+            assert!(
+                named > 0,
+                "{} has a token table that names no channel",
+                path.display()
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no vendor binding carries a token table");
+}

@@ -1,0 +1,62 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>checkbox widget that answers in storage</title>
+<!--
+  A widget whose success is a storage key, not a form field.
+
+  Vendors differ in where they leave the token: a hidden input in the host form,
+  a cookie, a key in their own origin's storage, or a message to the page. This
+  half of the fixture writes only `localStorage`, in its own origin, so a token
+  wait that polls form fields sees a solved widget as unsolved.
+
+  Same gate as the other checkbox fixture: the token is written only for a
+  trusted click that followed real motion, so a written key proves the engine
+  reached this context through the real event path.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 12px; }
+  #box {
+    width: 22px; height: 22px; border: 2px solid #666; border-radius: 3px;
+    display: inline-block; vertical-align: middle; cursor: pointer;
+  }
+  #box[aria-checked="true"] { background: #2b7; border-color: #2b7; }
+</style>
+
+<div id="box" role="checkbox" aria-checked="false" tabindex="0"></div>
+<span id="label">Verify you are human</span>
+<div id="state">untouched</div>
+
+<script>
+  const box = document.getElementById("box");
+  const state = document.getElementById("state");
+  let downTrusted = false;
+  let moves = 0;
+
+  // Nothing is in storage until the widget is cleared, so a page that starts
+  // with the key present is a page that was already solved.
+  localStorage.removeItem("fixture-token");
+
+  addEventListener("mousemove", event => {
+    if (event.isTrusted) {
+      moves += 1;
+    }
+  });
+
+  box.addEventListener("mousedown", event => {
+    downTrusted = event.isTrusted;
+  });
+
+  box.addEventListener("click", event => {
+    if (!event.isTrusted || !downTrusted) {
+      state.textContent = "refused: untrusted";
+      return;
+    }
+    if (moves < 3) {
+      state.textContent = "refused: no approach (" + moves + " moves)";
+      return;
+    }
+    box.setAttribute("aria-checked", "true");
+    localStorage.setItem("fixture-token", "fixture-" + moves + "-" + Date.now());
+    state.textContent = "solved";
+  });
+</script>

@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>checkbox widget that answers by message</title>
+<!--
+  A widget whose success is a message to its page, not a write anywhere.
+
+  This is the channel nothing can poll for. The payload is delivered once, to
+  whoever was listening in the page at that moment, and afterwards the widget
+  looks exactly as it did before: no field, no cookie, no storage key. An engine
+  that only reads state cannot tell this widget was cleared.
+
+  The payload is nested on purpose, under `detail.token`, because a vendor names
+  its own shape and the binding has to be able to follow it.
+
+  Same gate as the other checkbox fixtures: trusted click after real motion.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 12px; }
+  #box {
+    width: 22px; height: 22px; border: 2px solid #666; border-radius: 3px;
+    display: inline-block; vertical-align: middle; cursor: pointer;
+  }
+  #box[aria-checked="true"] { background: #2b7; border-color: #2b7; }
+</style>
+
+<div id="box" role="checkbox" aria-checked="false" tabindex="0"></div>
+<span id="label">Verify you are human</span>
+<div id="state">untouched</div>
+
+<script>
+  const box = document.getElementById("box");
+  const state = document.getElementById("state");
+  let downTrusted = false;
+  let moves = 0;
+
+  addEventListener("mousemove", event => {
+    if (event.isTrusted) {
+      moves += 1;
+    }
+  });
+
+  box.addEventListener("mousedown", event => {
+    downTrusted = event.isTrusted;
+  });
+
+  box.addEventListener("click", event => {
+    if (!event.isTrusted || !downTrusted) {
+      state.textContent = "refused: untrusted";
+      return;
+    }
+    if (moves < 3) {
+      state.textContent = "refused: no approach (" + moves + " moves)";
+      return;
+    }
+    box.setAttribute("aria-checked", "true");
+    // To the page, once. The widget keeps no copy, which is what makes this the
+    // only observation point.
+    parent.postMessage(
+      { source: "fixture-widget", detail: { token: "fixture-" + moves + "-" + Date.now() } },
+      "*"
+    );
+    state.textContent = "solved";
+  });
+</script>

@@ -74,6 +74,16 @@ const KIND_BUDGET_MS: &[(&str, u64)] = &[
 /// out of [`BUDGET_MS`], and is noise beside any solve.
 const SIGHTING_SETTLE_MS: u64 = 600;
 
+/// The share of a page budget the engine spends reading the page before it
+/// touches the widget. Held by `Prelude.sys.mjs BUDGET_SHARE` in the browser and
+/// by a cross-repo test, because a caller that does not charge for the read stops
+/// watching while the engine is still inside the budget it was granted.
+const PRELUDE_SHARE_DIVISOR: u64 = 3;
+
+/// Slack over the engine's own worst case: one poll gap, the evidence write, and
+/// the parent process getting back to the observer.
+const ENGINE_SLACK_MS: u64 = 3_000;
+
 /// Points in one approach path. Enough curvature to carry the corpus shape,
 /// short enough that the whole path is one event burst.
 const PATH_POINTS: usize = 24;
@@ -212,14 +222,7 @@ impl ChallengeConfig {
     #[must_use]
     pub fn for_process() -> Self {
         if let Some(raw) = verbatim_config() {
-            let evidence = evidence_from(&raw).unwrap_or_else(default_evidence_path);
-            return Self {
-                evidence,
-                modules: None,
-                budget_ms: BUDGET_MS,
-                helper: None,
-                verbatim: Some(raw),
-            };
+            return Self::from_caller(raw);
         }
         Self {
             evidence: default_evidence_path(),
@@ -227,6 +230,24 @@ impl ChallengeConfig {
             budget_ms: BUDGET_MS,
             helper: None,
             verbatim: None,
+        }
+    }
+
+    /// A configuration the caller composed, passed to the engine as it stands.
+    ///
+    /// This is the shape [`Self::for_process`] builds from [`CONFIG_ENV`], reached
+    /// without going through the environment: the evidence path is taken from the
+    /// text, and the budgets in it are the ones the wait for a verdict is measured
+    /// against.
+    #[must_use]
+    pub fn from_caller(raw: impl Into<String>) -> Self {
+        let raw = raw.into();
+        Self {
+            evidence: evidence_from(&raw).unwrap_or_else(default_evidence_path),
+            modules: None,
+            budget_ms: BUDGET_MS,
+            helper: None,
+            verbatim: Some(raw),
         }
     }
 
@@ -262,6 +283,45 @@ impl ChallengeConfig {
     #[must_use]
     pub fn env_entry(&self) -> (String, String) {
         (CONFIG_ENV.to_string(), self.to_env_value())
+    }
+
+    /// The longest the engine can spend on one page under this configuration.
+    ///
+    /// The engine charges its costs serially: the settle window, then the read of
+    /// the page, then the kind's own budget. A caller that stops watching before
+    /// this has killed a solve that was still inside the budget it granted, and
+    /// what it reports instead is the page probe's guess about a widget it cannot
+    /// see into. A caller-supplied configuration is read for its own numbers,
+    /// because a fixture that shortens a budget shortens the wait with it.
+    #[must_use]
+    pub fn engine_deadline_ms(&self) -> u64 {
+        let raw = self
+            .verbatim
+            .as_ref()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok());
+        let number = |key: &str, fallback: u64| -> u64 {
+            raw.as_ref()
+                .and_then(|value| value.get(key))
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(fallback)
+        };
+        let page_ms = number("budget_ms", self.budget_ms);
+        let settle_ms = number("sighting_settle_ms", SIGHTING_SETTLE_MS);
+        // A kind with no row of its own is bounded by the page budget, so that is
+        // the floor for the slowest kind this configuration can meet.
+        let kinds = raw
+            .as_ref()
+            .and_then(|value| value.get("kind_budget_ms"))
+            .and_then(serde_json::Value::as_object)
+            .map(|table| {
+                table
+                    .values()
+                    .filter_map(serde_json::Value::as_u64)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| KIND_BUDGET_MS.iter().map(|(_, ms)| *ms).collect());
+        let slowest_kind_ms = kinds.into_iter().chain([page_ms]).max().unwrap_or(page_ms);
+        settle_ms + page_ms / PRELUDE_SHARE_DIVISOR + slowest_kind_ms + ENGINE_SLACK_MS
     }
 }
 
@@ -793,6 +853,54 @@ mod tests {
         assert!(
             settle * 4 < smallest,
             "waiting {settle}ms eats the {smallest}ms budget of the fastest kind"
+        );
+    }
+
+    /// The driver grants the budget and the driver does the waiting, so the two
+    /// numbers are one number. A wait shorter than the engine's serial worst case
+    /// kills a solve that was still inside its budget, and what the caller gets
+    /// back is the page probe's guess about a widget it cannot see into: a page
+    /// mid-solve reads as `none`.
+    #[test]
+    fn a_page_is_watched_for_as_long_as_the_engine_was_given() {
+        let config = ChallengeConfig {
+            evidence: PathBuf::from("/tmp/lurien-deadline-test.jsonl"),
+            modules: None,
+            budget_ms: BUDGET_MS,
+            helper: None,
+            verbatim: None,
+        };
+        let deadline = config.engine_deadline_ms();
+        let read_ms = BUDGET_MS / PRELUDE_SHARE_DIVISOR;
+        for (kind, ms) in KIND_BUDGET_MS {
+            assert!(
+                deadline >= SIGHTING_SETTLE_MS + read_ms + ms,
+                "{kind} may take {ms}ms after a {read_ms}ms read and the wait ends at {deadline}ms"
+            );
+        }
+        assert!(
+            deadline >= SIGHTING_SETTLE_MS + read_ms + BUDGET_MS,
+            "a kind with no budget row of its own is bounded by the page budget"
+        );
+
+        // A fixture that shortens the budgets shortens the wait with it, so a test
+        // page that refuses does so inside its own numbers rather than the shipped
+        // ones.
+        let short = ChallengeConfig {
+            evidence: PathBuf::from("/tmp/lurien-deadline-test.jsonl"),
+            modules: None,
+            budget_ms: BUDGET_MS,
+            helper: None,
+            verbatim: Some(
+                r#"{"catalog":[],"budget_ms":3000,"sighting_settle_ms":100,
+                    "kind_budget_ms":{"checkbox":2000}}"#
+                    .to_string(),
+            ),
+        };
+        assert_eq!(short.engine_deadline_ms(), 100 + 1000 + 3000 + ENGINE_SLACK_MS);
+        assert!(
+            short.engine_deadline_ms() < deadline,
+            "a caller's own budget was ignored in favour of the shipped one"
         );
     }
 

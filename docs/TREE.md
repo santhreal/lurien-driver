@@ -87,7 +87,7 @@ the directory.
 | `Dynamics.sys.mjs` | deals one sampled path, drag profile or visit plan per interaction from the deck the config carries, in a seeded order |
 | `Pow.sys.mjs` | reads a `[work]` table, runs the nonce search in lanes, submits through the address the binding named |
 | `PowWorker.js` | one grinding lane: SHA-256 plus the difficulty predicate, off the main thread |
-| `Token.sys.mjs` | observes a vendor token appearing in a field or a cookie; read-only |
+| `Token.sys.mjs` | observes a vendor token arriving on one of four channels, and names which one: a field, a cookie, a storage key in the widget's own origin, or a dotted path into a posted message; read-only |
 | `Prelude.sys.mjs` | the visit before the act, dispatched in the top document: settle, pointer path, wheel session, dwell |
 | `Snapshot.sys.mjs` | per-context compositor snapshot as PNG |
 | `HelperSock.sys.mjs` | loopback-only line protocol to a helper process |

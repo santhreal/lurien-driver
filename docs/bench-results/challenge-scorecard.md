@@ -170,3 +170,29 @@ signals against the slider's one, so signal count and severity disagree:
   acting on the first sighting rather than opening the settle window took the page
   as `checkbox`, and the test red; a settle window of nothing did the same; a row
   that names only the widget the engine acted on turned the second claim red.
+
+The `token channels` fixtures rule out a solve that is only ever seen in a form
+field. Both widgets clear the same way, by a trusted click after real motion, and
+then answer somewhere a field poller never looks:
+
+- `challenge_storage_child.html` writes `localStorage["fixture-token"]` in its own
+  origin. The page cannot read that key, so only the widget's context can report it,
+  and the fixture clears the key on load so a stale value cannot pass for a solve.
+- `challenge_message_child.html` posts `{detail: {token}}` to the page once and keeps
+  no copy. There is nothing left to poll, so the observation has to be a listener
+  installed before the click, in the context the payload was posted to.
+- Each phase requires `via` to name its own channel, which is what rules out a pass
+  taken from a field or cookie the run happened to find.
+- A third phase names `nope.token`, a path the page never writes, under a 26000ms
+  kind budget: the click lands, nothing arrives, and the run is refused with an error
+  naming that budget. It is required to end after 26 s and before 45 s.
+- Measured on 2026-08-17 against engine 150.0.2-beta.25 and driver 0.1.0: `via`
+  `storage` in 6988 ms and `via` `message` in 7563 ms, both across 2 contexts, and
+  the unwritten channel refused in 29561 ms.
+- Five mutations were checked. A child that never reads a storage key turned phase
+  one red; a child that skips installing the message listener turned phase two red;
+  a wait that asks only the widget's own context and not the top document turned
+  phase two red, because the payload is delivered to the page; a payload path read
+  whole instead of split on `.` turned phase two red; and a driver that waits a
+  fixed 25 s for a verdict instead of the budgets it granted reported the refused
+  page as `none` and exited zero, which turned phase three red.

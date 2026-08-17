@@ -73,6 +73,16 @@
   that attaches after paint be seen before the kind is fixed. Every widget any
   context of the page held is reported, in the evidence row and from `goto`, so a
   caller can tell a page with one widget from a page where a second was passed over.
+- A solve is observed wherever the vendor chose to answer. Beside form fields and
+  cookies, a binding may name storage keys (`token_storage`) read in the widget's own
+  origin and dotted paths into a `postMessage` payload (`token_messages`); the verdict
+  row's `via` names the channel that answered. A message cannot be polled, so the
+  listener is installed when the page is first seen, and both the widget's context and
+  the top document are read on every poll, because a payload is delivered to whichever
+  context it was posted to.
+- `goto` waits for a verdict for as long as the budgets it granted the engine, instead
+  of a fixed 25s. A page whose kind budget outlived that constant was killed mid-solve
+  and reported as the page probe saw it, which on a cleared widget is `none`.
 - The `pow` kind is solved in the browser with no helper process. The binding's
   `[work]` table says where the challenge and difficulty live and where the answer
   goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by

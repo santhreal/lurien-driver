@@ -25,6 +25,29 @@ vendor_fields = [
 # not the element being measured. The crop comes from `target` and the drag starts
 # on `handle`, because dragging the puzzle itself moves nothing on a live widget.
 
+# The `token` inline table names where success can be observed. At least one of
+# these keys is required, because a solve nobody can observe would have to be
+# assumed:
+#
+#   hidden_input   form field name the vendor fills
+#   verify_field   same, for a vendor that calls it a verify field
+#   cookie         cookie name whose presence is the token
+#   storage        localStorage or sessionStorage key, in the widget's own origin
+#   message        dotted path in a payload the widget posts to its page, such as
+#                  `token` or `detail.token`. The only channel for a vendor that
+#                  writes nothing down, so it is observed by listening from the
+#                  moment the page is seen, not by polling afterwards.
+#
+# The list is enumerated by the registry test at run time, so a `token` key that
+# is not here, or a key here that `lurien/build.rs` does not read, is red.
+token_channels = [
+    "hidden_input",
+    "verify_field",
+    "cookie",
+    "storage",
+    "message",
+]
+
 # Target language the engine can execute. `target` and `handle` on a binding whose
 # kind this build claims must be one of these forms, or a CSS selector, which the
 # registry test recognizes as a value with no spaces in it. Prose is allowed only

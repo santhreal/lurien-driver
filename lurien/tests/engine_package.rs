@@ -205,3 +205,47 @@ fn every_kind_has_a_place_in_the_order_that_gates_a_page() {
         );
     }
 }
+
+/// The share of a page budget the engine spends reading the page is a second
+/// number held in two repositories.
+///
+/// The engine spends it before it touches the widget; the driver has to charge
+/// for it when it decides how long to watch for a verdict. Lower the share in the
+/// browser alone and the driver waits longer than it needs to; raise it and the
+/// driver stops watching mid-solve and reports the page probe's answer, which on a
+/// page being solved is `none`.
+#[test]
+fn the_driver_charges_for_the_read_the_engine_pays_for() {
+    let dir = additions();
+    if !dir.is_dir() {
+        return;
+    }
+    let source = fs::read_to_string(dir.join("Prelude.sys.mjs")).expect("Prelude.sys.mjs");
+    let needle = "const BUDGET_SHARE = 1 / ";
+    let index = source
+        .find(needle)
+        .expect("Prelude.sys.mjs declares BUDGET_SHARE as one over a whole number");
+    let divisor: u64 = source[index + needle.len()..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .expect("BUDGET_SHARE is one over a number");
+    assert!(divisor > 0, "a share of one over nothing is not a share");
+
+    // Read back from the driver's own deadline: two page budgets, one slow kind
+    // held constant, so the difference is exactly the read the engine pays for.
+    let deadline = |page_ms: u64| {
+        lurien::challenge::ChallengeConfig::from_caller(format!(
+            r#"{{"catalog":[],"budget_ms":{page_ms},"sighting_settle_ms":0,
+                "kind_budget_ms":{{"score":600000}}}}"#
+        ))
+        .engine_deadline_ms()
+    };
+    let charged = deadline(6_000) - deadline(3_000);
+    assert_eq!(
+        charged,
+        3_000 / divisor,
+        "the engine reads a page for a 1/{divisor} share and the driver charges {charged}ms of 3000ms"
+    );
+}
