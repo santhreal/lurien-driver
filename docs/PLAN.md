@@ -189,7 +189,7 @@ Do not create `santhreal/reynard`.
 | `~/.cache/reynard/reynard` | `~/.cache/lurien/lurien` |
 | `/opt/reynard/reynard` | `/opt/lurien/lurien` |
 | `scripts/install-reynard.sh` | `software/browser/install.sh` |
-| `/mnt/FlareTraining/reynard-staging` | `/mnt/FlareTraining/lurien-staging` (host path; do not hardcode in product) |
+| `$REYNARD_STAGING` | `$LURIEN_STAGING` (a host path the caller supplies; never hardcoded in the product) |
 
 `MaskConfig.hpp` read order after the patch:
 

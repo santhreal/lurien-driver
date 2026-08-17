@@ -58,5 +58,5 @@ hand-edit a live file.
 `lurien_gate` plus the IP-independent detectors in guise: `navigator.webdriver`
 is false over BiDi, persona UA holds in main and worker realms, sannysoft /
 areyouheadless stay clean. Stock Firefox 150 is the oracle only. On this host
-it lives at `/mnt/FlareTraining/firefox-150/firefox/firefox`. Set
+it lives at `$LURIEN_STAGING/firefox-150/firefox/firefox`. Set
 `STEALTH_FIREFOX` to that path. It is not a product fallback.

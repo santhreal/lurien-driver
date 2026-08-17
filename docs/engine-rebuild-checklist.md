@@ -6,7 +6,7 @@ must not run on the lagging desktop). Run order is grouped so ONE rebuild valida
 
 Build host: santhserver (`/var/santh-cargo-target` for cargo; Firefox build uses its own obj dir).
 Source: `software/browser/engine/` (the project's own repo under the Santh tree; its `camoufox-150*/obj-*`
-build tree is symlinked from the off-tree build NVMe `/mnt/FlareTraining/lurien-staging/`).
+build tree is symlinked from the off-tree build volume named by `$LURIEN_STAGING`).
 
 ## Group 1: build performance (R201–R206) · edit `assets/base.mozconfig`
 

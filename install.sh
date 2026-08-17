@@ -27,14 +27,12 @@ SANTH_ROOT="$(cd "${SCRIPT_DIR}/../.." >/dev/null 2>&1 && pwd)"
 BIN="${1:-${LURIEN_BIN:-${REYNARD_BIN:-${GUISE_REYNARD_BIN:-}}}}"
 
 if [ -z "${BIN}" ]; then
+  # LURIEN_STAGING names the build tree when it is not next to this script.
   for root in \
     "${SANTH_ROOT}/software/browser/engine" \
-    /mnt/FlareTraining/lurien-staging \
-    /mnt/FlareTraining/reynard-staging \
+    ${LURIEN_STAGING:+"${LURIEN_STAGING}"} \
     /opt/lurien-staging \
-    /opt/reynard-staging \
-    "${HOME}/lurien-staging" \
-    "${HOME}/reynard-staging"
+    "${HOME}/lurien-staging"
   do
     [ -d "${root}" ] || continue
     cand="$(ls -t "${root}"/camoufox-*/obj-*/dist/bin/camoufox 2>/dev/null | head -1 || true)"

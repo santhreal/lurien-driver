@@ -20,7 +20,7 @@ logged-in desktop session). `MOZ_DISABLE_CONTENT_SANDBOX=1`.
 | Playwright `firefox.launch({executable_path})` | Python 1.60 async. Title `Example Domain`, url `https://example.com/` |
 | `lurien as --profile <tmp>` | `imported cookies=true logins=true storage=true` |
 | Profile import (unit) | cookies+logins round-trip; missing `key4.db` warns; corrupt sqlite errors |
-| `lurien_gate` vs stock FF-150 | PASS. 185/194 agree. High leftovers are PersonaIntended or lurien-cleaner (`webdriver=false`, trust 80>35). Oracle: `/mnt/FlareTraining/firefox-150/firefox/firefox` |
+| `lurien_gate` vs stock FF-150 | PASS. 185/194 agree. High leftovers are PersonaIntended or lurien-cleaner (`webdriver=false`, trust 80>35). Oracle: stock Firefox 150 at `$LURIEN_STAGING/firefox-150/firefox/firefox` |
 | `live_detector_suite` vs stock FF-150 | 3/3 after applying `lurien_gate`'s leftover High table to G254. 5 High leftovers: timezone PersonaIntended, `webdriver=false`, trust 80>35, worker-realm self-coherent, no automation globals. Same leftovers `lurien_gate` already accepted |
 | Idle RSS | 351916 KiB (351 MiB) vs no stock FF-150 RSS compare this turn |
 | `cargo tree -p lurien-browser` | no scanclient / wafrift / ahura / captchaforge |
