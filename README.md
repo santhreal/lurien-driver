@@ -124,6 +124,7 @@ engine itself is a separate repository (a Gecko fork, MPL) and is not vendored
 here.
 
 Plan: [`docs/PLAN.md`](docs/PLAN.md).
+What this driver does differently, and what proves each of it: [`docs/COMPARISON.md`](docs/COMPARISON.md).
 Selectors and the wait: [`docs/SELECTORS.md`](docs/SELECTORS.md).
 Several verbs in one call: [`docs/BATCH.md`](docs/BATCH.md).
 How to add a vendor or a kind: [`docs/KINDS.md`](docs/KINDS.md).

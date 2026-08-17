@@ -21,7 +21,7 @@ this tree, so it stays a separate crate and never learns that lurien exists.
 | `captcha/kinds/` | vendor TOML | — (data) | — |
 | `lurien/kinds` | symlink to `captcha/kinds` | — | — |
 | `captcha/vision/` | `lurien-vision`: the slider measurement helper, one crop in, one axis out | png, serde | foxdriver, page, guise, lurien |
-| `docs/` | plan, verb reference, selectors, batch, kinds, helper protocol (`HELPERS.md`), and this file | — | — |
+| `docs/` | plan, verb reference, selectors, batch, kinds, axes and what proves them (`COMPARISON.md`), helper protocol (`HELPERS.md`), and this file | — | — |
 
 All of these directories live under `software/browser/`.
 
