@@ -12,7 +12,7 @@ pub static SPEC: VerbSpec = VerbSpec {
     domain: Domain::Dom,
     summary: "Number of elements matching a selector, total and visible.",
     args: &[
-        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS, or role:/text:/label:/placeholder:/testid: form." },
+        crate::verb::SELECTOR_ARG,
     ],
     output: OutputKind::Json,
     stability: Stability::Stable,

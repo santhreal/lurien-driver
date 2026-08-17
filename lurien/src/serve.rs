@@ -883,20 +883,71 @@ fn headless_of(command: &Command) -> bool {
     !attended
 }
 
+/// One named session and its clocks. `last_used` moves on every request that
+/// reaches the session, which is what makes an abandoned context distinguishable
+/// from a slow one.
+struct Entry {
+    session: Arc<Session>,
+    opened_at: std::time::Instant,
+    last_used: std::sync::Mutex<std::time::Instant>,
+}
+
+impl Entry {
+    fn new(session: Arc<Session>) -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            session,
+            opened_at: now,
+            last_used: std::sync::Mutex::new(now),
+        }
+    }
+
+    fn touch(&self) {
+        if let Ok(mut last) = self.last_used.lock() {
+            *last = std::time::Instant::now();
+        }
+    }
+
+    fn idle(&self) -> std::time::Duration {
+        match self.last_used.lock() {
+            Ok(last) => last.elapsed(),
+            // A poisoned clock must not keep a session alive forever; treat it as
+            // untouched since it opened.
+            Err(_) => self.opened_at.elapsed(),
+        }
+    }
+}
+
+/// How long a session may sit untouched before the reaper closes it. Overridden
+/// by `LURIEN_SESSION_IDLE_MS`; `0` disables reaping.
+pub const DEFAULT_IDLE_MS: u64 = 900_000;
+
+/// Idle deadline this process enforces, from the environment.
+#[must_use]
+pub fn idle_ms() -> u64 {
+    std::env::var("LURIEN_SESSION_IDLE_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_IDLE_MS)
+}
+
 /// Named sessions. A request clones its session handle out under a brief map
 /// lock and then drives it, so different contexts run concurrently; the
 /// per-context launch lock stops two requests from spawning two engines for one
 /// context without blocking any other context.
 #[derive(Default)]
 pub struct Registry {
-    sessions: Mutex<HashMap<String, Arc<Session>>>,
+    sessions: Mutex<HashMap<String, Arc<Entry>>>,
     launch_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl Registry {
-    /// Live session for `context`, if open.
+    /// Live session for `context`, if open. Reaching a session counts as use, so
+    /// a context under load is never reaped out from under its client.
     pub async fn get(&self, context: &str) -> Option<Arc<Session>> {
-        self.sessions.lock().await.get(context).cloned()
+        let entry = self.sessions.lock().await.get(context).cloned()?;
+        entry.touch();
+        Some(Arc::clone(&entry.session))
     }
 
     /// Open context names.
@@ -904,6 +955,34 @@ impl Registry {
         let mut names: Vec<String> = self.sessions.lock().await.keys().cloned().collect();
         names.sort();
         names
+    }
+
+    /// Every open session with its age, its idle time, and whether an engine is
+    /// actually running: a context can be named and still have no browser,
+    /// because launch is lazy.
+    pub async fn describe(&self) -> Vec<Value> {
+        let entries: Vec<(String, Arc<Entry>)> = {
+            let guard = self.sessions.lock().await;
+            let mut rows: Vec<(String, Arc<Entry>)> =
+                guard.iter().map(|(k, v)| (k.clone(), Arc::clone(v))).collect();
+            rows.sort_by(|a, b| a.0.cmp(&b.0));
+            rows
+        };
+        let idle_limit = idle_ms();
+        let mut out = Vec::with_capacity(entries.len());
+        for (context, entry) in entries {
+            let launched = entry.session.is_open().await;
+            let idle = entry.idle().as_millis() as u64;
+            out.push(json!({
+                "browser_context_id": context,
+                "state": if launched { "launched" } else { "named" },
+                "age_ms": entry.opened_at.elapsed().as_millis() as u64,
+                "idle_ms": idle,
+                "url": entry.session.current_url().await,
+                "reap_in_ms": if idle_limit == 0 { Value::Null } else { json!(idle_limit.saturating_sub(idle)) },
+            }));
+        }
+        out
     }
 
     /// Number of open contexts.
@@ -955,7 +1034,7 @@ impl Registry {
         self.sessions
             .lock()
             .await
-            .insert(context.to_string(), Arc::clone(&session));
+            .insert(context.to_string(), Arc::new(Entry::new(Arc::clone(&session))));
         Ok(session)
     }
 
@@ -966,12 +1045,35 @@ impl Registry {
         let taken = self.sessions.lock().await.remove(context);
         self.launch_locks.lock().await.remove(context);
         match taken {
-            Some(session) => {
-                let result = session.close().await;
-                result.map(|()| true)
-            }
+            Some(entry) => entry.session.close().await.map(|()| true),
             None => Ok(false),
         }
+    }
+
+    /// Close every session untouched for `idle`, returning the contexts closed.
+    /// A client that crashes leaves its browser running otherwise, and a leaked
+    /// engine costs a display, a profile directory, and several hundred megabytes.
+    pub async fn reap_idle(&self, idle: std::time::Duration) -> Vec<String> {
+        let stale: Vec<String> = {
+            let guard = self.sessions.lock().await;
+            guard
+                .iter()
+                .filter(|(_, entry)| entry.idle() >= idle)
+                .map(|(context, _)| context.clone())
+                .collect()
+        };
+        let mut closed = Vec::with_capacity(stale.len());
+        for context in stale {
+            match self.close(&context).await {
+                Ok(true) => closed.push(context),
+                Ok(false) => {}
+                // A browser that will not close is already gone from the map; say
+                // so on the way out rather than retrying it every sweep.
+                Err(err) => eprintln!("lurien serve: closing idle context {context}: {err}"),
+            }
+        }
+        closed.sort();
+        closed
     }
 }
 
@@ -992,16 +1094,24 @@ pub async fn dispatch(command: Command, registry: &Registry) -> Reply {
     match command.command.trim() {
         "launch" | "resume" | "launch_or_resume" => open_or_resume(&command, registry).await,
         "close" => close_context(&command, registry).await,
-        "list_contexts" => {
-            let contexts = registry.list().await;
+        "list_contexts" | "list_sessions" | "sessions" => {
+            let sessions = registry.describe().await;
+            let contexts: Vec<&str> = sessions
+                .iter()
+                .filter_map(|s| s["browser_context_id"].as_str())
+                .collect();
             let mut reply = Reply {
                 success: true,
-                output: format!("open browser contexts: {}", contexts.len()),
+                output: format!("open browser contexts: {}", sessions.len()),
                 metadata: Reply::base_metadata(),
                 ..Reply::default()
             };
-            reply.metadata.insert("count".to_string(), json!(contexts.len()));
+            reply.metadata.insert("count".to_string(), json!(sessions.len()));
             reply.metadata.insert("contexts".to_string(), json!(contexts));
+            reply.metadata.insert("sessions".to_string(), json!(sessions));
+            reply
+                .metadata
+                .insert("idle_limit_ms".to_string(), json!(idle_ms()));
             reply
         }
         _ => run_verb(&command, registry).await,
@@ -1154,6 +1264,7 @@ pub async fn run(bind: Option<&str>) -> Result<(), Error> {
     eprintln!("lurien serve listening on http://{bind}");
     eprintln!("lurien serve engine: {engine}");
     let registry = Arc::new(Registry::default());
+    spawn_reaper(Arc::clone(&registry));
     loop {
         let (stream, _) = listener
             .accept()
@@ -1163,6 +1274,30 @@ pub async fn run(bind: Option<&str>) -> Result<(), Error> {
         let registry = Arc::clone(&registry);
         tokio::spawn(handle_connection(stream, registry));
     }
+}
+
+/// Sweep idle sessions for as long as the server runs. A client that dies
+/// mid-session never sends `close`, so nothing else would ever release its
+/// engine.
+fn spawn_reaper(registry: Arc<Registry>) {
+    let limit = idle_ms();
+    if limit == 0 {
+        eprintln!("lurien serve: idle reaping disabled");
+        return;
+    }
+    let idle = std::time::Duration::from_millis(limit);
+    // Sweep often enough that a reaped session is gone within a quarter of its
+    // deadline, and never more than twice a second.
+    let every = std::time::Duration::from_millis((limit / 4).clamp(500, 30_000));
+    eprintln!("lurien serve: closing sessions idle for {limit}ms");
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(every).await;
+            for context in registry.reap_idle(idle).await {
+                eprintln!("lurien serve: closed idle context {context}");
+            }
+        }
+    });
 }
 
 async fn handle_connection(mut stream: TcpStream, registry: Arc<Registry>) {

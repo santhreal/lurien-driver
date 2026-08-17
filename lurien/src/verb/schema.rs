@@ -36,7 +36,7 @@ pub fn json_schema(spec: &VerbSpec) -> Value {
     schema
 }
 
-/// Description a face shows. Preview verbs say so.
+/// One-line label a face shows in a list. Preview verbs say so.
 #[must_use]
 pub fn description(spec: &VerbSpec) -> String {
     match spec.stability {
@@ -45,11 +45,51 @@ pub fn description(spec: &VerbSpec) -> String {
     }
 }
 
+/// The description an agent chooses from: what the verb does, when to reach for
+/// it, what comes back, and how its selector behaves. Every sentence is derived
+/// from the spec, so a new verb is described the moment it is registered and no
+/// hand-written blurb can drift from the argument list.
+#[must_use]
+pub fn full_description(spec: &VerbSpec) -> String {
+    let mut out = description(spec);
+    if !out.ends_with('.') && !out.ends_with(')') {
+        out.push('.');
+    }
+    out.push(' ');
+    out.push_str(spec.domain.guidance());
+    out.push(' ');
+    out.push_str(spec.output.returns());
+    // A selector argument accepts the semantic forms only when its own help says
+    // so. The frame verbs take a CSS selector inside a frame and no more, and a
+    // description that promised otherwise would be a lie an agent acts on.
+    if let Some(arg) = spec.arg("selector") {
+        if arg.help.contains("role:") {
+            out.push_str(
+                " `selector` is a CSS selector or a semantic form: role:, text:, label:, \
+                 placeholder:, testid:, or ref:eN from a snapshot.",
+            );
+            if spec.arg("timeout_ms").is_some() {
+                out.push_str(
+                    " It waits for the element, so a late one needs no explicit wait, and a \
+                     description fitting two visible elements is refused rather than guessed.",
+                );
+            } else {
+                out.push_str(" It does not wait: the element must already be there.");
+            }
+        } else {
+            out.push_str(" `selector` is CSS only here.");
+        }
+    }
+    out
+}
+
 /// CLI subcommand for one verb. Required arguments are positionals in
 /// declaration order; optional ones are long flags.
 #[must_use]
 pub fn clap_command(spec: &'static VerbSpec) -> Command {
-    let mut cmd = Command::new(spec.name).about(description(spec));
+    let mut cmd = Command::new(spec.name)
+        .about(description(spec))
+        .long_about(full_description(spec));
     for alias in spec.aliases {
         cmd = cmd.alias(*alias);
     }

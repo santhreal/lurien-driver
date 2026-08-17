@@ -467,6 +467,73 @@ async fn list_contexts_reports_an_empty_fleet_honestly() {
     assert!(reply.success);
     assert_eq!(reply.metadata["count"], json!(0));
     assert_eq!(reply.metadata["contexts"], json!([]));
+    assert_eq!(reply.metadata["sessions"], json!([]));
+}
+
+/// A crashed client never sends `close`, so without reaping its engine, profile
+/// directory, and display stay taken for the life of the server. What must not
+/// happen is reaping a session that is merely slow: use, not age, is the test, so
+/// a context touched inside the window survives while its idle sibling does not.
+#[tokio::test]
+async fn an_abandoned_session_is_reaped_and_a_used_one_is_not() {
+    let registry = Registry::default();
+    for context in ["busy", "gone"] {
+        let mut cmd = command("launch");
+        cmd.browser_context_id = context.to_string();
+        registry.open(&cmd).await.expect("session opens lazily");
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    // Reaching a session is use. This is the only difference between the two.
+    registry.get("busy").await.expect("busy session is open");
+
+    let closed = registry.reap_idle(std::time::Duration::from_millis(50)).await;
+    assert_eq!(closed, vec!["gone".to_string()], "only the idle context closes");
+    assert_eq!(registry.list().await, vec!["busy".to_string()]);
+
+    // The clock is per session, so the survivor is reapable once it too goes idle.
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    let closed = registry.reap_idle(std::time::Duration::from_millis(50)).await;
+    assert_eq!(closed, vec!["busy".to_string()]);
+    assert!(registry.is_empty().await, "the fleet is empty after reaping");
+}
+
+#[tokio::test]
+async fn reaping_an_empty_registry_closes_nothing() {
+    let registry = Registry::default();
+    assert!(registry
+        .reap_idle(std::time::Duration::from_millis(0))
+        .await
+        .is_empty());
+}
+
+/// A client deciding whether to reuse or reopen a context needs its age, whether
+/// an engine is actually running behind the name, and how long it has left.
+#[tokio::test]
+async fn the_session_list_reports_age_state_and_the_idle_deadline() {
+    let registry = Registry::default();
+    let mut cmd = command("launch");
+    cmd.browser_context_id = "described".to_string();
+    registry.open(&cmd).await.expect("session opens lazily");
+
+    let reply = serve::dispatch(command("sessions"), &registry).await;
+    assert!(reply.success, "{}", reply.error);
+    assert_eq!(reply.metadata["count"], json!(1));
+    let row = &reply.metadata["sessions"][0];
+    assert_eq!(row["browser_context_id"], json!("described"));
+    // Launch is lazy: a named context with no engine must not claim to have one.
+    assert_eq!(row["state"], json!("named"));
+    assert!(row["age_ms"].as_u64().is_some(), "age is reported: {row}");
+    let idle = row["idle_ms"].as_u64().expect("idle is reported");
+    let limit = reply.metadata["idle_limit_ms"].as_u64().expect("limit");
+    assert_eq!(limit, serve::idle_ms());
+    if limit > 0 {
+        assert_eq!(
+            row["reap_in_ms"].as_u64().expect("deadline"),
+            limit.saturating_sub(idle),
+            "the deadline must follow the idle clock: {row}"
+        );
+    }
+    assert_eq!(row["url"], json!(""), "nothing was navigated");
 }
 
 #[test]

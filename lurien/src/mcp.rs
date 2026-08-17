@@ -214,7 +214,7 @@ pub fn tool_list() -> Value {
         .map(|spec| {
             json!({
                 "name": spec.name,
-                "description": schema::description(spec),
+                "description": schema::full_description(spec),
                 "inputSchema": schema::json_schema(spec),
             })
         })

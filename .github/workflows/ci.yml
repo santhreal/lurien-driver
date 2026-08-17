@@ -85,6 +85,18 @@ jobs:
           node --check lurien/src/locator.js
           node --check lurien/src/snapshot.js
 
+  e2e-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The live suite skips without an engine, so a syntax error in one of these
+      # scripts would read as a skip on every machine that lacks the browser.
+      - name: the live scripts parse
+        run: |
+          for script in lurien/tests/e2e_*.sh; do
+            bash -n "$script" || exit 1
+          done
+
   slider-measurement:
     runs-on: ubuntu-latest
     steps:

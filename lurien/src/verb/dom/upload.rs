@@ -11,7 +11,7 @@ pub static SPEC: VerbSpec = VerbSpec {
     domain: Domain::Dom,
     summary: "Attach files to a file input.",
     args: &[
-        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS, or role:/text:/label:/placeholder:/testid: form." },
+        crate::verb::SELECTOR_ARG,
         ArgSpec { name: "files", ty: ArgType::StrList, required: true, default: None, help: "Absolute local paths." },
         crate::verb::TIMEOUT_ARG,
     ],

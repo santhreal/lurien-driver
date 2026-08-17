@@ -11,7 +11,7 @@ pub static SPEC: VerbSpec = VerbSpec {
     domain: Domain::Dom,
     summary: "Select an option by value, waiting for the control to be actionable.",
     args: &[
-        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS, or role:/text:/label:/placeholder:/testid: form." },
+        crate::verb::SELECTOR_ARG,
         ArgSpec { name: "value", ty: ArgType::Str, required: true, default: None, help: "Option value to choose." },
         crate::verb::TIMEOUT_ARG,
     ],

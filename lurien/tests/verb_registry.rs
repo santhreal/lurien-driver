@@ -71,6 +71,115 @@ fn every_verb_and_argument_is_documented() {
     }
 }
 
+/// The guidance and return sentences are the only prose in a description, so an
+/// empty or lazy one would pass the composition law below while telling a caller
+/// nothing. A domain added without guidance fails to compile; one added with a
+/// placeholder fails here.
+#[test]
+fn every_domain_and_output_shape_carries_real_prose() {
+    for domain in Domain::all() {
+        let guidance = domain.guidance();
+        assert!(
+            guidance.starts_with("Use this") && guidance.ends_with('.') && guidance.len() > 40,
+            "{}: guidance must be one sentence telling a caller when to reach for the family: \
+             {guidance}",
+            domain.as_str()
+        );
+    }
+    for output in [
+        verb::OutputKind::Empty,
+        verb::OutputKind::Text,
+        verb::OutputKind::Json,
+        verb::OutputKind::Png,
+    ] {
+        let returns = output.returns();
+        assert!(
+            returns.starts_with("Returns") && returns.ends_with('.') && returns.len() > 20,
+            "{output:?}: must name what comes back: {returns}"
+        );
+    }
+}
+
+/// An agent picks a verb from its description alone. A description that says
+/// only what the verb does leaves the choice between `text` and `snapshot`, or
+/// between `click` and `press`, to a guess. Every one names when to reach for it
+/// and what comes back, and both sentences are derived from the spec, so a verb
+/// registered tomorrow is described the same way.
+#[test]
+fn every_tool_description_says_when_to_use_it_and_what_it_returns() {
+    for spec in verb::registry() {
+        let text = schema::full_description(spec);
+        assert!(
+            text.contains(spec.domain.guidance()),
+            "{}: description does not say when to use a {} verb: {text}",
+            spec.name,
+            spec.domain.as_str()
+        );
+        assert!(
+            text.contains(spec.output.returns()),
+            "{}: description does not say what it returns: {text}",
+            spec.name
+        );
+        assert!(
+            text.starts_with(spec.summary),
+            "{}: description must open with the summary, not restate it: {text}",
+            spec.name
+        );
+        let Some(arg) = spec.arg("selector") else {
+            continue;
+        };
+        // The resolver-backed verbs share one argument spec; a CSS-only one, like
+        // the frame verbs, must not be described as accepting a description.
+        let semantic = arg.help.contains("role:");
+        assert_eq!(
+            semantic,
+            text.contains("ref:eN"),
+            "{}: the description must promise the semantic forms only where the \
+             argument accepts them: {text}",
+            spec.name
+        );
+        if !semantic {
+            assert!(
+                text.contains("CSS only"),
+                "{}: a CSS-only selector must say so: {text}",
+                spec.name
+            );
+            continue;
+        }
+        let waits = spec.arg("timeout_ms").is_some();
+        assert_eq!(
+            waits,
+            text.contains("It waits for the element"),
+            "{}: the description must agree with whether the verb waits",
+            spec.name
+        );
+        assert_eq!(
+            !waits,
+            text.contains("It does not wait"),
+            "{}: a verb with no deadline must say it does not wait",
+            spec.name
+        );
+    }
+}
+
+/// The MCP face must serve the composed description, not the bare summary: a
+/// client that reads `tools/list` is the caller that most needs the guidance.
+#[test]
+fn mcp_tools_list_serves_the_composed_description() {
+    let tools = lurien::mcp::tool_list();
+    let tools = tools.as_array().expect("tools/list is an array");
+    assert_eq!(tools.len(), verb::registry().len());
+    for tool in tools {
+        let name = tool["name"].as_str().expect("tool name");
+        let spec = verb::lookup(name).expect("tool is a registry verb");
+        assert_eq!(
+            tool["description"].as_str().unwrap_or_default(),
+            schema::full_description(spec),
+            "{name}: tools/list description drifted from the spec"
+        );
+    }
+}
+
 #[test]
 fn required_arguments_come_before_optional_ones() {
     // Required arguments are CLI positionals in declaration order. Interleaving

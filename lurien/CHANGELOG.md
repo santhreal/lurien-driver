@@ -108,6 +108,17 @@
   adding a variant stops that test compiling until it is listed.
 - `hard captcha` names the kind it refused, which the message previously captured
   and dropped.
+- A tool description says when to reach for the verb, what comes back, and whether
+  its selector waits. Every sentence is composed from the spec, so a verb is
+  described the moment it is registered, and a selector argument that is CSS only
+  is not advertised as accepting a description. `lurien help <verb>` shows the
+  same text an MCP client reads.
+- `lurien serve` sessions have a lifecycle. Every named session carries an age and
+  an idle clock, `sessions` (also `list_contexts`) reports both plus whether an
+  engine is actually running behind the name, and a session untouched for
+  `LURIEN_SESSION_IDLE_MS` (default 900000, `0` disables) is closed. A client that
+  dies mid-session used to leak its browser, profile directory and display for the
+  life of the server.
 - A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
   `drag_profile` and `prelude` when it names none. Without this the engine fell
   back to a built-in constant, so every session moved identically.

@@ -102,6 +102,59 @@ impl Domain {
             Self::Intercept,
         ]
     }
+
+    /// One sentence naming when a caller reaches for this family. Composed into
+    /// the MCP tool description and `--help`, so an agent picking between two
+    /// verbs reads the same guidance a person does.
+    #[must_use]
+    pub const fn guidance(self) -> &'static str {
+        match self {
+            Self::Page => {
+                "Use this when the subject is the whole document: navigating, waiting for it, \
+                 reading it, or capturing it."
+            }
+            Self::Dom => {
+                "Use this when the subject is one element on the page, named by a selector."
+            }
+            Self::Input => {
+                "Use this for input the page must believe came from a hand, when no element \
+                 is being targeted."
+            }
+            Self::Frame => {
+                "Use this when the element you want lives in an iframe rather than the top \
+                 document."
+            }
+            Self::Storage => "Use this to read or write cookies and web storage directly.",
+            Self::State => {
+                "Use this to carry a whole logged-in origin between sessions in one blob."
+            }
+            Self::Net => {
+                "Use this to read what the page requested, after redaction, rather than to \
+                 change it."
+            }
+            Self::Dialog => {
+                "Use this when a native dialog or a download is blocking the page and must be \
+                 answered."
+            }
+            Self::Observe => {
+                "Use this to read what the page did on its own: console, errors, CSP, messages, \
+                 DOM sinks."
+            }
+            Self::Profile => {
+                "Use this to choose or inspect the persona, or to import a real Firefox profile."
+            }
+            Self::Context => {
+                "Use this to run several independent sessions in one browser, each with its own \
+                 cookies."
+            }
+            Self::Session => {
+                "Use this for work about the calls themselves rather than about the page."
+            }
+            Self::Intercept => {
+                "Use this to change a request or a response before the page sees it."
+            }
+        }
+    }
 }
 
 /// Ship state of a verb. `Preview` is listed and marked, never silently shipped
@@ -172,6 +225,19 @@ pub struct ArgSpec {
     pub help: &'static str,
 }
 
+/// The element argument every verb that goes through the resolver accepts.
+///
+/// One spec rather than six copies, and the help line is what tells a face the
+/// argument accepts the semantic forms: a selector argument whose help does not
+/// name them is CSS only, like the frame verbs.
+pub const SELECTOR_ARG: ArgSpec = ArgSpec {
+    name: "selector",
+    ty: ArgType::Str,
+    required: true,
+    default: None,
+    help: "CSS, or a role:/text:/label:/placeholder:/testid:/ref: form.",
+};
+
 /// The deadline argument every verb that resolves an element accepts.
 ///
 /// One spec rather than one per verb, so the name, the type and the help line
@@ -201,6 +267,20 @@ pub enum OutputKind {
     Json,
     /// Image bytes.
     Png,
+}
+
+impl OutputKind {
+    /// One sentence naming what the caller gets back. Faces compose this into
+    /// the tool description, so a shape change cannot leave the prose behind.
+    #[must_use]
+    pub const fn returns(self) -> &'static str {
+        match self {
+            Self::Empty => "Returns nothing: success, or a refusal that says what to do.",
+            Self::Text => "Returns one line of text.",
+            Self::Json => "Returns a JSON object, not prose.",
+            Self::Png => "Returns PNG bytes, written to path when one is given.",
+        }
+    }
 }
 
 /// What a verb produced.

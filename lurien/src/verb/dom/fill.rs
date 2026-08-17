@@ -11,7 +11,7 @@ pub static SPEC: VerbSpec = VerbSpec {
     domain: Domain::Dom,
     summary: "Focus a field and type text, waiting for it to be actionable.",
     args: &[
-        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS, or role:/text:/label:/placeholder:/testid: form." },
+        crate::verb::SELECTOR_ARG,
         ArgSpec { name: "text", ty: ArgType::Str, required: true, default: None, help: "Text to type." },
         crate::verb::TIMEOUT_ARG,
     ],

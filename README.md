@@ -40,6 +40,11 @@ lurien serve                        # HTTP, many named sessions
 
 Verb reference: [`docs/VERBS.md`](docs/VERBS.md), generated from the registry.
 
+`lurien serve` names each session with a `browser_context_id`, reports every open
+one with its age, state and idle time, and closes a session nobody has touched for
+`LURIEN_SESSION_IDLE_MS` (default 15 minutes, `0` to disable), so a client that
+dies does not leave a browser running.
+
 ## Selectors
 
 A `selector` is a CSS selector or one of five semantic forms:

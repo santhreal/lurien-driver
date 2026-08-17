@@ -11,7 +11,7 @@ pub static SPEC: VerbSpec = VerbSpec {
     domain: Domain::Dom,
     summary: "Visible text of an element, waiting for it to appear.",
     args: &[
-        ArgSpec { name: "selector", ty: ArgType::Str, required: true, default: None, help: "CSS, or role:/text:/label:/placeholder:/testid: form." },
+        crate::verb::SELECTOR_ARG,
         crate::verb::TIMEOUT_ARG,
     ],
     output: OutputKind::Text,
