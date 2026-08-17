@@ -59,7 +59,7 @@ pub fn token_ok(expected: &str, given: &str) -> bool {
 
 /// Answer one connection, refusing anything that is not this protocol version
 /// carrying this session's token.
-pub fn serve_one(stream: &mut TcpStream, token: &str) {
+pub fn serve_one(stream: &mut TcpStream, token: &str, helper: &mut crate::Helper) {
     let peer = stream.peer_addr().ok();
     if let Some(peer) = peer {
         if !is_loopback(&peer) {
@@ -81,7 +81,7 @@ pub fn serve_one(stream: &mut TcpStream, token: &str) {
     let reply = match reader.read_line(&mut line) {
         Ok(0) => Reply::refused("empty request"),
         Ok(_) => match serde_json::from_str::<Request>(line.trim()) {
-            Ok(request) => authorized(&request, token),
+            Ok(request) => authorized(&request, token, helper),
             Err(e) => Reply::refused(format!("request is not this protocol: {e}")),
         },
         Err(e) => Reply::refused(format!("cannot read request: {e}")),
@@ -96,7 +96,7 @@ pub fn serve_one(stream: &mut TcpStream, token: &str) {
 /// The answer for a request that proved which protocol it speaks and which
 /// session it belongs to. Loopback is not access control: every process on this
 /// host, including a page's own helper, can reach the port.
-fn authorized(request: &Request, token: &str) -> Reply {
+fn authorized(request: &Request, token: &str, helper: &mut crate::Helper) -> Reply {
     if request.v != PROTOCOL_VERSION {
         return Reply::refused(format!(
             "this helper speaks protocol {PROTOCOL_VERSION} and the request names {}; \
@@ -116,15 +116,15 @@ fn authorized(request: &Request, token: &str) -> Reply {
              name the same token in the session's helper configuration",
         );
     }
-    crate::answer(request)
+    helper.answer(request)
 }
 
 /// Serve until the listener is dropped. One connection at a time is enough: a
 /// solve asks one question per widget.
-pub fn serve(listener: &TcpListener, token: &str) {
+pub fn serve(listener: &TcpListener, token: &str, helper: &mut crate::Helper) {
     for stream in listener.incoming() {
         match stream {
-            Ok(mut stream) => serve_one(&mut stream, token),
+            Ok(mut stream) => serve_one(&mut stream, token, helper),
             Err(_) => continue,
         }
     }
@@ -149,7 +149,10 @@ mod tests {
     fn spawn_with(token: &'static str) -> u16 {
         let listener = bind("127.0.0.1:0".parse().expect("addr")).expect("bind");
         let port = listener.local_addr().expect("addr").port();
-        std::thread::spawn(move || serve(&listener, token));
+        std::thread::spawn(move || {
+            let mut helper = crate::Helper::new(None);
+            serve(&listener, token, &mut helper);
+        });
         port
     }
 
@@ -220,7 +223,10 @@ mod tests {
         // The right token on another protocol version is refused for the version,
         // before anything reads the crop.
         let reply = ask(port, &format!("{{\"v\":99,\"token\":\"{TOKEN}\",{crop}}}"));
-        assert!(reply.contains("speaks protocol 1"), "{reply}");
+        assert!(
+            reply.contains(&format!("speaks protocol {PROTOCOL_VERSION}")),
+            "{reply}"
+        );
     }
 
     /// A helper started with no token is not an open helper. Every request is

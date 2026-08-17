@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-description = "Gap detection helper for the slider challenge kind. Sees one crop, never the page."
+description = "Perception helper for the slider and grid challenge kinds. Sees one crop, never the page."
 authors = ["Santh <64453045+santhreal@users.noreply.github.com>"]
 repository = "https://github.com/santhreal/lurien-driver"
 publish = false
@@ -17,3 +17,15 @@ path = "src/main.rs"
 png = "0.17"
 serde = { workspace = true }
 serde_json = { workspace = true }
+# The runtime library is loaded at run time, not linked: a build here must not
+# need an onnxruntime on the build host, and a helper without one refuses grids
+# instead of failing to start.
+ort = { version = "2.0.0-rc.12", default-features = false, features = [
+    "std",
+    "load-dynamic",
+    "api-24",
+] }
+# The model's own tokenizer, read from the export's tokenizer.json. A hand-rolled
+# byte-pair encoder that disagrees with the weights' vocabulary embeds a
+# different sentence than the one the widget asked.
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }

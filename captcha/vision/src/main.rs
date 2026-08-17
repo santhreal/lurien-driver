@@ -5,6 +5,7 @@
 //! caller can pass 0 and let the kernel choose.
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 /// Environment variable naming the session token, for a caller that would rather
@@ -12,11 +13,16 @@ use std::process::ExitCode;
 const TOKEN_ENV: &str = "LURIEN_HELPER_TOKEN";
 
 fn usage() -> String {
-    "usage: lurien-vision --token T [--host 127.0.0.1] [--port N]\n\
+    "usage: lurien-vision --token T [--host 127.0.0.1] [--port N] [--model DIR]\n\
      \n\
-     Answers one JSON request per connection: {v, token, kind, task, png, width, height}.\n\
-     Replies {dx, dy, confidence} or {error}. Loopback only, and every request must\n\
-     name this session's token; LURIEN_HELPER_TOKEN sets it without a command line.\n\
+     Answers one JSON request per connection.\n\
+     slider: {kind:\"slider\", task:\"axis\", png, width} -> {dx, dy, confidence}.\n\
+     grid:   {kind:\"visual\", task:\"cells\", png, width, prompt, cells} -> {cells, scores}.\n\
+     \n\
+     A grid needs an image-text model: --model DIR, or LURIEN_VISION_MODEL. Without\n\
+     one, grids are refused by name and sliders are still measured.\n\
+     Loopback only, and every request must name this session's token;\n\
+     LURIEN_HELPER_TOKEN sets it without a command line.\n\
      See docs/HELPERS.md for the protocol."
         .to_string()
 }
@@ -25,6 +31,7 @@ fn main() -> ExitCode {
     let mut host = "127.0.0.1".to_string();
     let mut port = 0u16;
     let mut token = std::env::var(TOKEN_ENV).unwrap_or_default();
+    let mut model = lurien_vision::clip::model_dir_from_env();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -39,6 +46,13 @@ fn main() -> ExitCode {
                 Some(value) => port = value,
                 None => {
                     eprintln!("--port needs a number\n{}", usage());
+                    return ExitCode::from(2);
+                }
+            },
+            "--model" => match args.next() {
+                Some(value) => model = Some(PathBuf::from(value)),
+                None => {
+                    eprintln!("--model needs a directory\n{}", usage());
                     return ExitCode::from(2);
                 }
             },
@@ -89,7 +103,18 @@ fn main() -> ExitCode {
         }
     };
     // One line, parseable, so a script can start the helper and read its port.
-    println!("{{\"listening\":\"{bound}\",\"port\":{}}}", bound.port());
-    lurien_vision::server::serve(&listener, &token);
+    // It also names whether this helper can answer a grid: a session
+    // that reads "model":null and then waits on a grid solve is waiting for a
+    // refusal.
+    let model_line = match &model {
+        Some(dir) => format!("\"{}\"", dir.display()),
+        None => "null".to_string(),
+    };
+    println!(
+        "{{\"listening\":\"{bound}\",\"port\":{},\"model\":{model_line}}}",
+        bound.port()
+    );
+    let mut helper = lurien_vision::Helper::new(model);
+    lurien_vision::server::serve(&listener, &token, &mut helper);
     ExitCode::SUCCESS
 }

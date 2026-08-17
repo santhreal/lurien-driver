@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 /// than a bug. A version on every line turns it into one refusal instead of a
 /// field-by-field misreading of a request. `HelperSock.sys.mjs` sends this number
 /// and the tests hold the two copies equal.
-pub const PROTOCOL_VERSION: u64 = 1;
+pub const PROTOCOL_VERSION: u64 = 2;
 
 /// What the engine asks for.
 #[derive(Debug, Clone, Deserialize)]
@@ -26,9 +26,9 @@ pub struct Request {
     /// This session's helper token, minted by whoever started both processes.
     #[serde(default)]
     pub token: String,
-    /// Challenge kind. Only `slider` is answered here.
+    /// Challenge kind. `slider` and `visual` are answered here.
     pub kind: String,
-    /// Task within the kind. Only `axis` is answered here.
+    /// Task within the kind: `axis` for a slider, `cells` for a grid.
     pub task: String,
     /// The crop, PNG, base64.
     #[serde(default)]
@@ -37,41 +37,86 @@ pub struct Request {
     /// snapshot was taken at a scale.
     #[serde(default)]
     pub width: f64,
+    /// Crop height in CSS pixels.
     #[serde(default)]
     pub height: f64,
+    /// What the widget asked for, in the widget's own words. A grid request
+    /// without it is refused: the question is the whole task.
+    #[serde(default)]
+    pub prompt: String,
+    /// The cells of the grid, in the crop's own pixels and in the order the
+    /// browser laid them out. The answer is indices into this list, so the
+    /// browser clicks its own rectangles rather than coordinates from a helper.
+    #[serde(default)]
+    pub cells: Vec<crate::grid::Cell>,
 }
 
-/// What the helper answers. An answer carries either an axis or an error, never
-/// both, and never a silent zero.
+/// What the helper answers. An answer carries one kind's result or an error,
+/// never both, and never a silent zero.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Reply {
+    /// Slider travel along x, in the caller's own pixels.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dx: Option<f64>,
+    /// Slider travel along y, which is zero for every slider seen so far.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dy: Option<f64>,
+    /// How sure the measurement or the weakest chosen cell is.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f32>,
+    /// Indices into the request's cell list, in grid order. An empty list is an
+    /// answer: nothing in the grid matched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cells: Option<Vec<usize>>,
+    /// The target's share for every cell, so a caller can see what a refusal or a
+    /// thin margin was made of.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scores: Option<Vec<f32>>,
+    /// Why there is no answer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
 impl Reply {
+    /// A measured slider axis.
     #[must_use]
     pub fn axis(dx: f64, confidence: f32) -> Self {
         Self {
             dx: Some(dx),
             dy: Some(0.0),
             confidence: Some(confidence),
+            cells: None,
+            scores: None,
             error: None,
         }
     }
 
+    /// The cells that answer a grid, with every cell's score.
+    #[must_use]
+    pub fn grid(cells: Vec<usize>, scores: Vec<f32>) -> Self {
+        let confidence = cells
+            .iter()
+            .filter_map(|index| scores.get(*index).copied())
+            .fold(f32::INFINITY, f32::min);
+        Self {
+            dx: None,
+            dy: None,
+            confidence: confidence.is_finite().then_some(confidence),
+            cells: Some(cells),
+            scores: Some(scores),
+            error: None,
+        }
+    }
+
+    /// No answer, and why.
     #[must_use]
     pub fn refused(reason: impl Into<String>) -> Self {
         Self {
             dx: None,
             dy: None,
             confidence: None,
+            cells: None,
+            scores: None,
             error: Some(reason.into()),
         }
     }

@@ -1,14 +1,22 @@
-//! The slider helper: one crop in, one axis out.
+//! The perception helper: one crop in, one answer out.
 //!
 //! The engine snapshots the widget's own browsing context, sends the crop here,
-//! and drags by the answer through the trusted input path. This process sees a
-//! few hundred pixels and nothing else, which is why it is a process: perception
-//! does not belong in libxul, and a model that cannot see a session cannot leak
-//! one.
+//! and applies the answer through the trusted input path. This process sees a few
+//! hundred pixels and nothing else, which is why it is a process: perception does
+//! not belong in libxul, and a model that cannot see a session cannot leak one.
+//!
+//! Two kinds are answered. A slider is measured, which is arithmetic over a crop
+//! and needs no weights. A grid is recognised, which needs a model, so a helper
+//! started without one refuses grid requests by name and still measures sliders.
 
+pub mod clip;
 pub mod gap;
+pub mod grid;
+pub mod pixels;
 pub mod proto;
 pub mod server;
+
+use std::path::{Path, PathBuf};
 
 use gap::Gray;
 
@@ -57,23 +65,158 @@ pub fn decode_png(bytes: &[u8]) -> Result<Gray, String> {
     Ok(Gray::new(width, height, pixels))
 }
 
-/// Answer one request.
+/// The helper's state: a model, once something asks for one.
+///
+/// The weights are hundreds of megabytes and take seconds to open, so they are
+/// loaded on the first grid request and kept. A session that only ever measures
+/// sliders never pays for them, and a session whose model directory is wrong finds
+/// out on the request that needed it, with the path in the refusal.
+pub struct Helper {
+    model_dir: Option<PathBuf>,
+    clip: Option<clip::Clip>,
+    /// The load failure, kept so a second request does not spend another few
+    /// seconds proving the same directory is still not a model.
+    refused: Option<String>,
+}
+
+impl Helper {
+    /// A helper that will look for a model in `model_dir` when a grid arrives.
+    #[must_use]
+    pub fn new(model_dir: Option<PathBuf>) -> Self {
+        Self {
+            model_dir,
+            clip: None,
+            refused: None,
+        }
+    }
+
+    /// The model directory this helper was given, if any.
+    #[must_use]
+    pub fn model_dir(&self) -> Option<&Path> {
+        self.model_dir.as_deref()
+    }
+
+    /// Answer one request.
+    #[must_use]
+    pub fn answer(&mut self, request: &proto::Request) -> proto::Reply {
+        match (request.kind.as_str(), request.task.as_str()) {
+            ("slider", "axis") => slider(request),
+            ("visual", "cells") => self.cells(request),
+            ("slider" | "visual", task) => proto::Reply::refused(format!(
+                "unknown task {task} for kind {}; slider takes axis and visual takes cells",
+                request.kind
+            )),
+            (kind, _) => proto::Reply::refused(format!(
+                "this helper answers the slider and visual kinds, not {kind}"
+            )),
+        }
+    }
+
+    /// Which cells of a grid answer the widget's question.
+    fn cells(&mut self, request: &proto::Request) -> proto::Reply {
+        let phrase = grid::phrase(&request.prompt);
+        if phrase.is_empty() {
+            return proto::Reply::refused(format!(
+                "the prompt {:?} names nothing to look for, so no cell can be judged; \
+                 the binding's prompt selector is reading the wrong element",
+                request.prompt
+            ));
+        }
+        if request.cells.is_empty() {
+            return proto::Reply::refused(
+                "the request carries no cells; the browser owns the grid geometry and \
+                 has to send the rectangles it laid out",
+            );
+        }
+        let bytes = match proto::base64_decode(&request.png) {
+            Ok(bytes) => bytes,
+            Err(e) => return proto::Reply::refused(e),
+        };
+        let image = match pixels::decode_png_rgb(&bytes) {
+            Ok(image) => image,
+            Err(e) => return proto::Reply::refused(e),
+        };
+        // Cells are stated in the caller's pixels; the PNG may have been taken at
+        // a scale. Cropping by CSS pixels on a scaled snapshot reads a corner of
+        // the wrong cell, which is a wrong answer rather than an error.
+        let scale = if request.width > 0.0 {
+            image.width() as f64 / request.width
+        } else {
+            1.0
+        };
+        let model = match self.model() {
+            Ok(model) => model,
+            Err(e) => return proto::Reply::refused(e),
+        };
+        let mut phrases = vec![phrase];
+        phrases.extend(grid::ALTERNATIVES.iter().map(|p| (*p).to_string()));
+        let mut texts = Vec::with_capacity(phrases.len());
+        for phrase in &phrases {
+            match model.text_embedding(phrase) {
+                Ok(embedding) => texts.push(embedding),
+                Err(e) => return proto::Reply::refused(e),
+            }
+        }
+        let mut shares = Vec::with_capacity(request.cells.len());
+        for cell in &request.cells {
+            let crop = match image.crop(
+                (cell.x * scale).round() as i64,
+                (cell.y * scale).round() as i64,
+                (cell.w * scale).round() as i64,
+                (cell.h * scale).round() as i64,
+            ) {
+                Ok(crop) => crop,
+                Err(e) => return proto::Reply::refused(e),
+            };
+            let embedding = match model.image_embedding(&crop) {
+                Ok(embedding) => embedding,
+                Err(e) => return proto::Reply::refused(e),
+            };
+            let similarities: Vec<f32> = texts
+                .iter()
+                .map(|text| clip::cosine(&embedding, text))
+                .collect();
+            shares.push(grid::target_share(&similarities));
+        }
+        let chosen = grid::chosen(&shares, grid::THRESHOLD);
+        proto::Reply::grid(chosen, shares)
+    }
+
+    /// The model, loading it the first time it is needed.
+    fn model(&mut self) -> Result<&mut clip::Clip, String> {
+        if let Some(reason) = &self.refused {
+            return Err(reason.clone());
+        }
+        if self.clip.is_none() {
+            let Some(dir) = self.model_dir.clone() else {
+                let reason = format!(
+                    "this helper was started without a grid classifier, so a grid is refused \
+                     rather than guessed; pass --model DIR or set {}",
+                    clip::MODEL_ENV
+                );
+                self.refused = Some(reason.clone());
+                return Err(reason);
+            };
+            match clip::Clip::load(&dir) {
+                Ok(model) => self.clip = Some(model),
+                Err(e) => {
+                    self.refused = Some(e.clone());
+                    return Err(e);
+                }
+            }
+        }
+        Ok(self.clip.as_mut().expect("just loaded"))
+    }
+}
+
+/// Measure a slider crop.
 ///
 /// The travel is reported in the caller's own coordinates: the crop may have been
 /// snapshotted at a device scale, so pixels are converted back by the ratio
 /// between the stated width and the decoded width. Dragging by device pixels on a
 /// scaled display is the classic off-by-a-factor miss.
 #[must_use]
-pub fn answer(request: &proto::Request) -> proto::Reply {
-    if request.kind != "slider" {
-        return proto::Reply::refused(format!(
-            "this helper answers the slider kind, not {}",
-            request.kind
-        ));
-    }
-    if request.task != "axis" {
-        return proto::Reply::refused(format!("unknown task {}", request.task));
-    }
+fn slider(request: &proto::Request) -> proto::Reply {
     let bytes = match proto::base64_decode(&request.png) {
         Ok(bytes) => bytes,
         Err(e) => return proto::Reply::refused(e),
@@ -148,6 +291,12 @@ mod tests {
         Gray::new(width, height, pixels)
     }
 
+    /// A helper with no model: every test here measures a slider, which needs no
+    /// weights, and the grid refusals are about what happens without them.
+    fn helper() -> Helper {
+        Helper::new(None)
+    }
+
     fn request(image: &Gray, width: f64) -> proto::Request {
         serde_json::from_value(serde_json::json!({
             "kind": "slider",
@@ -162,7 +311,7 @@ mod tests {
     #[test]
     fn a_png_crop_round_trips_into_an_axis() {
         let image = crop(300, 65, 12, 196);
-        let reply = answer(&request(&image, 300.0));
+        let reply = helper().answer(&request(&image, 300.0));
         let dx = reply.dx.expect("an axis for a crop with a notch");
         assert!((dx - 184.0).abs() <= 2.0, "reported {dx} for a travel of 184");
         assert_eq!(reply.error, None);
@@ -173,7 +322,7 @@ mod tests {
         // Snapshot taken at 2x: the crop is 600 device pixels wide but the widget
         // is 300 CSS pixels, and the drag happens in CSS pixels.
         let image = crop(600, 130, 24, 392);
-        let reply = answer(&request(&image, 300.0));
+        let reply = helper().answer(&request(&image, 300.0));
         let dx = reply.dx.expect("an axis");
         assert!((dx - 184.0).abs() <= 2.0, "reported {dx} for a travel of 184 css pixels");
     }
@@ -183,7 +332,7 @@ mod tests {
         let image = crop(300, 65, 12, 196);
         let mut req = request(&image, 300.0);
         req.kind = "visual".to_string();
-        let reply = answer(&req);
+        let reply = helper().answer(&req);
         assert_eq!(reply.dx, None);
         assert!(reply.error.expect("error").contains("slider"));
     }
@@ -193,13 +342,13 @@ mod tests {
         let image = crop(300, 65, 12, 196);
         let mut req = request(&image, 300.0);
         req.task = "cells".to_string();
-        assert!(answer(&req).error.expect("error").contains("cells"));
+        assert!(helper().answer(&req).error.expect("error").contains("cells"));
     }
 
     #[test]
     fn a_crop_with_no_notch_is_refused_not_answered_zero() {
         let flat = Gray::new(300, 65, vec![205; 300 * 65]);
-        let reply = answer(&request(&flat, 300.0));
+        let reply = helper().answer(&request(&flat, 300.0));
         assert_eq!(reply.dx, None, "answered an axis for a crop with no notch");
         assert!(reply.error.expect("error").contains("notch"));
     }
@@ -208,7 +357,7 @@ mod tests {
     fn a_payload_that_is_not_a_png_is_refused() {
         let mut req = request(&crop(300, 65, 12, 196), 300.0);
         req.png = base64_encode(b"this is not a png");
-        assert!(answer(&req).error.expect("error").contains("png"));
+        assert!(helper().answer(&req).error.expect("error").contains("png"));
     }
 
     #[test]
@@ -234,7 +383,7 @@ mod tests {
             "height": 65.0,
         }))
         .expect("request");
-        let dx = answer(&req).dx.expect("an axis from an rgba crop");
+        let dx = helper().answer(&req).dx.expect("an axis from an rgba crop");
         assert!((dx - 184.0).abs() <= 2.0, "reported {dx}");
     }
 }
