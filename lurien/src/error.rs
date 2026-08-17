@@ -101,14 +101,28 @@ pub enum Error {
         /// Why it was refused.
         detail: String,
     },
-    /// Interactive captcha in v1.
+    /// The page shows an interactive widget and the engine reported nothing about
+    /// it, so no attempt was made.
     #[error(
-        "hard captcha ({kind}): not claimed, so no engine path clears it. \
+        "hard captcha ({kind}): the engine reported nothing it did, so nothing cleared it. \
          Check docs/bench-results/challenge-scorecard.md for the claimed kinds."
     )]
     HardCaptcha {
-        /// Catalog kind that is not claimed.
+        /// Catalog kind the page probe saw.
         kind: String,
+    },
+    /// The engine acted on a claimed kind and refused, naming why.
+    ///
+    /// Distinct from [`Error::HardCaptcha`]: the kind is claimed and the engine
+    /// did work. Sending the caller to the scorecard here would name the wrong
+    /// cause, so the engine's own reason is the message, and every engine refusal
+    /// names the corrective action for its own case.
+    #[error("the engine could not clear the {kind} widget: {detail}")]
+    ChallengeRefused {
+        /// Kind the engine acted on.
+        kind: String,
+        /// The engine's own reason, which names what to do about it.
+        detail: String,
     },
     /// Managed score-class challenge did not write a token.
     #[error(
@@ -324,6 +338,13 @@ mod tests {
             Error::ProfileLocked { path: "/tmp/profile".into() },
             Error::CookiesCorrupt { path: "/tmp/cookies.sqlite".into(), detail: "not SQLite".into() },
             Error::HardCaptcha { kind: "visual".into() },
+            Error::ChallengeRefused {
+                kind: "visual".into(),
+                detail: "this helper was started without a grid classifier, so a grid is \
+                         refused rather than guessed; pass --model DIR or set \
+                         LURIEN_VISION_MODEL"
+                    .into(),
+            },
             Error::ScoreFailed { detail: "no token after 8000ms".into() },
             Error::EvidenceVersion { found: 99, known: 1 },
             Error::ChallengeNotStarted {
@@ -384,6 +405,7 @@ mod tests {
                 | Error::ProfileLocked { .. }
                 | Error::CookiesCorrupt { .. }
                 | Error::HardCaptcha { .. }
+                | Error::ChallengeRefused { .. }
                 | Error::ScoreFailed { .. }
                 | Error::EvidenceVersion { .. }
                 | Error::ChallengeNotStarted { .. }

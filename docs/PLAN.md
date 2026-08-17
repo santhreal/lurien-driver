@@ -172,7 +172,8 @@ that: a variant with no captured detail, or with no next action, is red.
 | `ProxyUnreachable` | the proxy URL and the connect error. There is no fall back to direct |
 | `ProfileLocked`, `CookiesCorrupt`, `LoginsSkipped` | the path, and whether the import continued without it |
 | `ChallengeNotStarted` | the browser never started its solver, so a clean page cannot be told from a blind one |
-| `HardCaptcha` | the kind this build does not claim, by name. Never a pass, never a third-party call |
+| `HardCaptcha` | an interactive widget the engine reported nothing about, by name. Never a pass, never a third-party call |
+| `ChallengeRefused` | the kind the engine drove and could not clear, with the engine's own reason and what to do about it |
 | `ScoreFailed` | the classification or the token wait that ran out, and the budget it was given |
 | `EvidenceVersion` | the version the row carried and the version this build reads |
 | `GeolocationUnavailable`, `ControlUnavailable` | which control call failed, on which port, and why |
@@ -353,7 +354,11 @@ Claimed means there is a fixture, a runnable script, and a dated row in
 `visual` is claimed against a fixture grid and needs a CLIP classifier on disk,
 which the vision helper loads on the first request and refuses by name without.
 The shipped `hcaptcha`, `recaptcha` and `arkose` bindings carry no `[grid]` table,
-so those widgets are recognized and their solve refused until one does.
+so those widgets are recognized and their solve refused until one does. The
+scorecard records why with numbers: reCAPTCHA's tile selectors are known and its
+noised street photographs defeat whole-tile captioning, and hCaptcha renders one
+canvas with counting and comparison tasks rather than a tile grid. A live row for
+`visual` needs detector-class perception in the helper, not another selector.
 
 Not claimed, and refused by name at runtime:
 

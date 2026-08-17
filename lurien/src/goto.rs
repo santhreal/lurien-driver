@@ -39,11 +39,21 @@ impl ChallengeKind {
             _ => Self::Fail,
         }
     }
+}
 
-    /// v1 claims only `none` and `score`.
-    #[must_use]
-    pub const fn claimed_in_v1(self) -> bool {
-        matches!(self, Self::None | Self::Score)
+/// What a caller is told when the engine reported a page it did not clear.
+///
+/// Two different failures wear the same words if this is written inline: a kind
+/// this build never attempts, and a kind it attempted and refused. The first is
+/// answered by the scorecard, the second by the engine's own reason, so the choice
+/// lives here where it can be checked.
+fn engine_failure(kind: &str, detail: String) -> Error {
+    match kind {
+        "score" | "none" => Error::ScoreFailed { detail },
+        other => Error::ChallengeRefused {
+            kind: other.to_string(),
+            detail,
+        },
     }
 }
 
@@ -95,12 +105,7 @@ pub async fn goto(page: &Page, url: &str) -> Result<GotoOutcome, Error> {
                 .error
                 .clone()
                 .unwrap_or_else(|| "the engine reported no vendor write".to_string());
-            return match report.kind.as_str() {
-                "score" | "none" => Err(Error::ScoreFailed { detail }),
-                other => Err(Error::HardCaptcha {
-                    kind: format!("{other}: {detail}"),
-                }),
-            };
+            return Err(engine_failure(&report.kind, detail));
         }
         return Ok(GotoOutcome {
             url: final_url,
@@ -284,8 +289,41 @@ mod tests {
     fn unknown_kind_fails_closed() {
         assert_eq!(ChallengeKind::parse("nonesuch"), ChallengeKind::Fail);
         assert_eq!(ChallengeKind::parse(""), ChallengeKind::Fail);
-        assert!(!ChallengeKind::Checkbox.claimed_in_v1());
-        assert!(ChallengeKind::Score.claimed_in_v1());
+    }
+
+    #[test]
+    fn an_engine_refusal_names_its_own_reason_and_not_the_scorecard() {
+        // The scorecard answers "this build does not attempt that kind". It does
+        // not answer "the classifier has no model", and pointing a caller at it
+        // for a kind the engine did work on names the wrong cause.
+        let refused = engine_failure(
+            "visual",
+            "this helper was started without a grid classifier, so a grid is refused rather \
+             than guessed; pass --model DIR or set LURIEN_VISION_MODEL"
+                .to_string(),
+        );
+        let text = refused.to_string();
+        assert!(matches!(refused, Error::ChallengeRefused { .. }), "{text}");
+        assert!(text.contains("LURIEN_VISION_MODEL"), "{text}");
+        assert!(!text.contains("scorecard"), "{text}");
+        assert!(!text.contains("not claimed"), "{text}");
+        // A managed challenge is a wait that ended, not a widget that was driven.
+        assert!(matches!(
+            engine_failure("score", "no token after 8000ms".to_string()),
+            Error::ScoreFailed { .. }
+        ));
+        // Every claimed interactive kind reaches the refusal class, so a kind added
+        // to the claim list cannot land back on the scorecard message by default.
+        for kind in crate::challenge::CLAIMED_KINDS {
+            if matches!(*kind, "none" | "score" | "fail") {
+                continue;
+            }
+            let err = engine_failure(kind, "the vendor wrote no token".to_string());
+            assert!(
+                matches!(err, Error::ChallengeRefused { .. }),
+                "{kind} reports as {err}"
+            );
+        }
     }
 
     #[test]

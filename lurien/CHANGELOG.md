@@ -57,6 +57,11 @@
   dealt `grid_deck` entry named in the row, and a binding with no `[grid]` table is
   recognized and then refused rather than aimed at guessed selectors. The helper
   protocol is 2.
+- A page the engine drove and could not clear is `ChallengeRefused`, carrying the
+  engine's own reason, and `hard captcha` is now only for a widget the engine
+  reported nothing about. The old message sent every failure to the scorecard to
+  read which kinds are claimed, which named the wrong cause once a kind was claimed:
+  a grid refused for want of a classifier is a missing model, not a missing claim.
 - Every evidence row carries a schema version, and the driver refuses a row it does
   not read. The browser and the driver ship as two builds, so a half-finished install
   had the driver reading a foreign row field-by-field and reporting a plausible failed
