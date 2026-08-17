@@ -26,26 +26,26 @@ and the row rewritten. A proof belongs to a build, not to a feature.
 | `score` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | observed in 6994 ms across 2 contexts, `via: field`, widget never touched; a 4000 ms budget refused a vendor that answered later | `lurien/tests/e2e_score.sh`; the widget writes its token on its own schedule in its own context and refuses outright if a trusted press or key reaches it, which is what a misclassified scoring page would produce |
 | `score` | live vendor | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | vendor wrote its token, no interaction | managed deployment at `demo.turnstile.workers.dev` reports `{"kind":"score"}`; the observer folded to `none` because the token was already written |
 | `checkbox` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | solved in 7088 ms across 2 contexts, `via: field`; most of that is the visit the vendor is owed before the click | `lurien/tests/e2e_challenge.sh`; the widget refuses an untrusted click and a click with fewer than three trusted pointer moves |
+| `visual` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 3 tiles of 9 named for "Select all images with a blue square", clicked and accepted, whole page 13758 ms, `via: field`; a question the classifier cannot answer was refused with every tile's share | `lurien/tests/e2e_visual.sh`; the target shape and the matching tiles are minted per load, the widget accepts only trusted clicks in its own context, and the exact set must match. A helper started with no classifier refuses by name rather than guessing |
 | `pow` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 4 hex zeros cleared in 143 hashes across 7 lanes, typed and accepted, whole page 9689 ms, `via: field` | `lurien/tests/e2e_pow.sh`; the page mints a fresh challenge and a random difficulty per load and accepts only a digest it verified itself, typed key by key with trusted events. `lurien/tests/pow_sha256.mjs` pins the worker digest against a reference implementation |
 | `slider` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | notch measured from pixels, 259 px travel dragged in 20 moves, accepted, whole page 4791 ms, `via: field` | `lurien/tests/e2e_slider.sh`; the notch moves every load, the widget refuses a travel with fewer than eight moves, one step size, no correction, or under 80 ms, and the same run with an evenly spaced profile is refused. `captcha/vision/tests/real_crop.rs` pins the measurement against a crop the browser rendered |
 | `fail` | n/a | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | typed error, no fabricated token | `tests/verb_fail_closed.rs` |
 
 ## Not claimed
 
-`visual` and `audio` have primitives in the engine and no row here, so the solver
-refuses them:
+`audio` has primitives in the engine and no row here, so the solver refuses it:
 
 ```
-kind visual is not claimed by this build; it is refused rather than reported as a pass
+kind audio is not claimed by this build; it is refused rather than reported as a pass
 ```
 
-Each needs a local helper (`HelperSock`) plus a row above before it will run. The
+It needs a local helper (`HelperSock`) plus a row above before it will run. The
 refusal is deliberate: a solver that reports success on a kind it cannot finish
 teaches its caller to trust a number that means nothing.
 
 ## What the fixtures rule out
 
-The `checkbox`, `pow`, and `slider` rows are fixtures rather than live
+The `checkbox`, `pow`, `slider`, and `visual` rows are fixtures rather than live
 deployments, so they prove the mechanism and not yet the arms race. The `checkbox`
 fixture rules out the ways a page-script or outside-driver solver fails:
 
@@ -88,6 +88,42 @@ The `slider` fixture rules out the ways a drag can be faked:
 - The binding names the puzzle as "first canvas in this BC" and the handle as
   "first draggable in this BC", so no coordinate and no vendor class name is
   involved in finding either.
+
+The `visual` fixture rules out a grid answered without looking:
+
+- The target shape and which tiles carry it are minted per load from
+  `crypto.getRandomValues`, and the tiles are shuffled, so a recorded set of
+  indices is worth nothing on the next visit. The second phase visits the same page
+  again and requires a different question and a different set.
+- The answer must be the exact set. One extra tile or one tile short writes no
+  token, so a solver that clicks every tile, or the first tile it likes, is refused.
+- Each tile is drawn on a canvas and its shape is named nowhere in the DOM, so
+  there is no attribute, alt text, or class to read: the only account of what a tile
+  holds is its pixels, cropped in the widget's own browsing context, which the
+  parent document cannot read. The fixture records that `contentDocument` access
+  throws.
+- Every selection needs a trusted `mousedown` and `click` on the tile, so
+  `element.click()` and `dispatchEvent` select nothing.
+- The engine answers with tile indices, not coordinates. The context that measured
+  the grid re-locates the index-th cell to click it, so no coordinate crosses a
+  process boundary and a rectangle that moved cannot be clicked anyway.
+- The third phase points the binding's prompt at a question the classifier cannot
+  answer, "Select all images with a yellow star", and requires a refusal that quotes
+  the question and every tile's share. The fourth starts the helper with no
+  classifier and requires a refusal naming the model it was not given.
+- Measured on 2026-08-17 against engine 150.0.2-beta.25 and driver 0.1.0: "Select
+  all images with a blue square" answered as tiles 3, 5, and 7 of 9, each chosen
+  tile holding a share of 0.998 against at most 0.151 for the rest, confidence
+  0.998, whole page 13758 ms, 14 trusted moves and 8 wheel events in the visit,
+  pacing deck entry 4. The second visit asked for a green triangle and answered 2
+  and 4.
+- Three mutations were checked. Cropping the box measured before the widget was
+  scrolled into view put seven tiles of nine above the threshold, because the
+  picture and the cell rectangles no longer shared an origin, and the exact-set
+  fixture refused the run; clamping a cell that reaches past the crop instead of
+  refusing it turned the helper's bounds test red; dropping the pacing deck deal
+  left `dyn.grid` unnamed, which turned phase one red with the answer still
+  accepted, so the pacing claim is held by the deck and not by the solve.
 
 The `prelude` fixture rules out a solve that clicks a page nobody read:
 

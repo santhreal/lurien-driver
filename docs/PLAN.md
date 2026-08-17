@@ -38,8 +38,9 @@ installed `lurien-browser` and says so when it is missing.
 | the environment the page reads | geolocation, wall clock, permissions and locale are set over the engine control channel, not by page script, proven by `lurien/tests/e2e_geo.sh` and `lurien/tests/e2e_clock.sh` |
 | the network view | routes are applied on the channel in the parent, and one redaction rule serves the log, the HAR and the route view, proven by `lurien/tests/e2e_route.sh` and `lurien/tests/e2e_har.sh` |
 | a handle that means one context | a frame handle is minted once per browsing context and refused when the context is gone, proven by `lurien/tests/e2e_frames.sh` |
+| a grid answered by looking | a tile challenge is cropped in the widget's own context, classified against a local CLIP model, and clicked by index with a dealt pace, proven by `lurien/tests/e2e_visual.sh` |
 
-`lurien-driver` is not published while `visual` and `audio` are still refused.
+`lurien-driver` is not published while `audio` is still refused.
 
 ## 1. Names
 
@@ -295,7 +296,7 @@ a target, and the channels a token can arrive on. Kinds are a closed set in
 | `checkbox` | trusted click in the child context | the token arrives |
 | `slider` | snapshot, measure, drag | the token arrives |
 | `pow` | worker lanes in the browser | the answer is accepted at its bound address |
-| `visual` | snapshot, helper, click | not claimed |
+| `visual` | snapshot the grid, ask the vision helper, click each named tile | the token arrives. A binding with no `[grid]` table is refused by name |
 | `audio` | media, helper, type | not claimed |
 | `fail` | none | never. The classification itself is the refusal |
 
@@ -347,11 +348,15 @@ The rest are the upstream fingerprinting patches, which are inherited, not ours.
 
 Claimed means there is a fixture, a runnable script, and a dated row in
 `docs/bench-results/challenge-scorecard.md`. Today that is `none`, `score`,
-`checkbox`, `slider`, `pow`.
+`checkbox`, `visual`, `slider`, `pow`.
+
+`visual` is claimed against a fixture grid and needs a CLIP classifier on disk,
+which the vision helper loads on the first request and refuses by name without.
+The shipped `hcaptcha`, `recaptcha` and `arkose` bindings carry no `[grid]` table,
+so those widgets are recognized and their solve refused until one does.
 
 Not claimed, and refused by name at runtime:
 
-- `visual`. Needs a local model in the vision helper and a live row.
 - `audio`. Needs speech-to-text in a helper and a live row.
 
 Not built:
@@ -381,7 +386,7 @@ Known leaks, stated in the README:
 
 | Artifact | Where | Name | State |
 |---|---|---|---|
-| driver crate, two binaries | crates.io | `lurien-driver` | unpublished, gated on a claimed `visual` and `audio` |
+| driver crate, two binaries | crates.io | `lurien-driver` | unpublished, gated on a claimed `audio` |
 | persona crates | crates.io | `guise` family | published at `0.1.8` |
 | driver internals | crates.io | `runtime-foxdriver` | published, internal, not marketed |
 | retired crate | crates.io | `captchaforge` | 36 versions yanked, `0.2.41` is the notice |

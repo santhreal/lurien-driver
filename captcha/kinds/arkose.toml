@@ -6,5 +6,8 @@ iframe_src = ["arkoselabs.com", "funcaptcha.com", "client-api.arkoselabs.com"]
 custom_elements = []
 scripts = ["arkoselabs.com/v2/api.js"]
 
-target = "first visual grid in this BC"
+# The enforcement iframe, which is the context the grid is laid out in. There is
+# no [grid] table: the tile selectors inside that document are minted per session,
+# so the solve is refused by name rather than aimed at a guessed class.
+target = "iframe[src*=arkoselabs.com]"
 token = { hidden_input = "fc-token", verify_field = "verification_token" }

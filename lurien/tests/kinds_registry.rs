@@ -682,3 +682,99 @@ fn every_test_the_kind_guide_names_is_a_test_in_this_tree() {
         "only {cited} tests are named in the guide, so it stopped saying what enforces a step"
     );
 }
+
+/// Keys a `[grid]` table may name, read from `_schema.toml` at run time.
+fn grid_keys() -> Vec<String> {
+    let raw = fs::read_to_string(kinds_dir().join("_schema.toml")).expect("_schema.toml");
+    let mut keys = Vec::new();
+    let mut inside = false;
+    for line in raw.lines() {
+        let text = line.trim_start_matches('#').trim();
+        if text.starts_with("A `visual` binding also carries a [grid] table") {
+            inside = true;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        if text.starts_with("A `pow` binding") {
+            break;
+        }
+        // A key line is indented exactly one step past the comment marker and
+        // holds `name` then its description, so a wrapped description line and the
+        // prose around the block are both skipped.
+        let Some(entry) = line.strip_prefix("#   ") else {
+            continue;
+        };
+        if entry.starts_with(' ') {
+            continue;
+        }
+        let mut words = entry.split_whitespace();
+        if let (Some(key), Some(_)) = (words.next(), words.next()) {
+            if key.chars().all(|c| c.is_ascii_lowercase()) {
+                keys.push(key.to_string());
+            }
+        }
+    }
+    keys
+}
+
+/// A tile grid is answered from its `[grid]` table, so a table that names a key no
+/// primitive reads is a binding that would be attempted and then miss the tiles.
+/// The keys live in `_schema.toml` and are read from there, so adding one there is
+/// what makes it legal rather than editing this test.
+#[test]
+fn every_grid_table_names_only_keys_the_engine_reads() {
+    let keys = grid_keys();
+    assert!(
+        keys.contains(&"prompt".to_string()) && keys.contains(&"cell".to_string()),
+        "the schema stopped documenting the two keys a grid cannot be read without: {keys:?}"
+    );
+    for binding in lurien::catalog::CATALOG {
+        for (key, _) in binding.grid {
+            assert!(
+                keys.contains(&(*key).to_string()),
+                "{} names the grid key {key}, which no primitive reads",
+                binding.name
+            );
+        }
+        if binding.grid.iter().any(|(key, _)| *key == "prompt") {
+            assert!(
+                binding.grid.iter().any(|(key, _)| *key == "cell"),
+                "{} names a question and no tile selector, so the tiles cannot be found",
+                binding.name
+            );
+        }
+    }
+}
+
+/// A claimed kind whose data is missing is refused by name, not attempted.
+///
+/// `visual` is claimed, and the vendor bindings for it carry no `[grid]` table
+/// because the selectors inside those widgets are minted per session. So the solver
+/// has to say that: the widget is recognized, its tiles cannot be read. A branch
+/// that instead ran with an empty selector would click nothing and report a timeout,
+/// which reads as a broken engine rather than as a binding nobody finished.
+#[test]
+fn a_visual_binding_with_no_grid_table_is_refused_by_name() {
+    let solver = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../engine/additions/challenge/Solver.sys.mjs");
+    let Ok(raw) = fs::read_to_string(&solver) else {
+        println!("SKIP: no browser checkout at {}", solver.display());
+        return;
+    };
+    assert!(
+        raw.contains("this binding carries no grid table naming a prompt and a cell selector"),
+        "the visual branch no longer refuses a binding with no grid table by name"
+    );
+    let unbound: Vec<&str> = lurien::catalog::CATALOG
+        .iter()
+        .filter(|binding| binding.kind == "visual" && binding.grid.is_empty())
+        .map(|binding| binding.name)
+        .collect();
+    assert!(
+        !unbound.is_empty(),
+        "every visual binding now carries a grid table, so this law has nothing left to guard \
+         and each of them needs a scorecard row instead"
+    );
+}

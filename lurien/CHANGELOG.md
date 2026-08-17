@@ -42,7 +42,21 @@
   over the page probe, so a cleared widget is not re-reported as pending.
 - A kind is claimed only when the scorecard carries a dated row for it. An unclaimed kind
   is refused with a typed error rather than reported as a pass, and two tests enforce the
-  scorecard against the claimed set. Claimed: `none`, `score`, `checkbox`, `pow`, `slider`.
+  scorecard against the claimed set. Claimed: `none`, `score`, `checkbox`, `visual`,
+  `pow`, `slider`.
+- `visual` is claimed. A tile grid is read in the widget's own browsing context, which
+  scrolls it into view and reports the box it landed in together with one rectangle
+  per tile; the parent crops exactly that box, asks `lurien-vision` which tiles match
+  the question, and the widget's context re-locates each named tile to click it, so no
+  page coordinate crosses a process boundary and a rectangle that moved cannot be
+  clicked. A tile is judged by its softmax share against generic alternatives rather
+  than a fixed cosine cutoff, an empty set is a real answer rather than a failure, and
+  every tile's share is recorded in the evidence row so a near miss is legible. The
+  classifier is a local CLIP ONNX pair the helper loads on first use and never
+  downloads; without one the request is refused by name. Selections are paced from a
+  dealt `grid_deck` entry named in the row, and a binding with no `[grid]` table is
+  recognized and then refused rather than aimed at guessed selectors. The helper
+  protocol is 2.
 - Every evidence row carries a schema version, and the driver refuses a row it does
   not read. The browser and the driver ship as two builds, so a half-finished install
   had the driver reading a foreign row field-by-field and reporting a plausible failed

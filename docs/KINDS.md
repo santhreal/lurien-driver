@@ -10,7 +10,7 @@ chrome-visible signals to a closed kind.
 | `none` | — | document usable |
 | `score` | Token.wait | vendor wrote one of the named channels |
 | `checkbox` | Input.click on catalog target in child BC | Token.wait |
-| `visual` | Snapshot → helper → Input.click cells / type | Token.wait |
+| `visual` | Snapshot on the grid → helper → Input.clickCell per named tile | Token.wait |
 | `slider` | Snapshot on the puzzle → helper axis → Input.drag on the handle | Token.wait |
 | `audio` | media → helper STT → Input.type | Token.wait |
 | `pow` | nonce search in browser worker lanes → the `[work]` submit address | Token.wait |
@@ -26,6 +26,13 @@ a gap per pair of keys and a hold per key from the deck the session shipped, so
 `pow`, `visual` and `audio` all reach a field through the same rhythm. A primitive
 that assigns `value` instead is a solve a page can measure and reject.
 
+A `visual` grid is answered with tile indices. The context that laid the grid out
+measures it, the parent crops exactly the box it reports and asks the vision helper
+which tiles match the widget's question, and the same context re-locates each named
+tile to click it, so no coordinate crosses a process boundary. The helper needs a
+CLIP classifier on disk and refuses the request by name without one, which
+`docs/HELPERS.md` describes.
+
 ## Add a vendor
 
 1. Copy `captcha/kinds/_schema.toml` fields into `captcha/kinds/<vendor>.toml`.
@@ -37,7 +44,10 @@ that assigns `value` instead is a solve a page can measure and reject.
    posted to the page, `detail.token`). Name every channel the vendor uses; one is
    enough to load the binding.
    A `slider` also names `handle`: the element a hand grabs, which is not the
-   element being measured. A `pow` also carries a `[work]` table.
+   element being measured. A `pow` also carries a `[work]` table, and a `visual` a
+   `[grid]` table naming the question, the tiles, and the submit control. A
+   `visual` binding with no `[grid]` table is still recognized and then refused by
+   name, rather than bound to guessed class names.
    A target on a kind this build claims must be a form the engine resolves:
    `first checkbox in this BC`, `first canvas in this BC`,
    `first draggable in this BC`, `role:<name>`, or a CSS selector. Prose is for a

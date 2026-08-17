@@ -30,7 +30,8 @@ pub const CONFIG_ENV: &str = "LURIEN_CHALLENGE";
 /// typed error rather than reported as a pass. An interactive kind joins this
 /// list only with a dated scorecard row against a live vendor page, which
 /// `tests/kinds_registry.rs` enforces.
-pub const CLAIMED_KINDS: &[&str] = &["none", "score", "checkbox", "pow", "slider", "fail"];
+pub const CLAIMED_KINDS: &[&str] =
+    &["none", "score", "checkbox", "visual", "pow", "slider", "fail"];
 
 /// Schema version of every row the engine appends to the evidence file, and the
 /// only version this build reads.
@@ -53,14 +54,16 @@ const BUDGET_MS: u64 = 20_000;
 /// A kind is bounded by the work it has to do. Waiting on a scoring vendor is the
 /// whole solve and takes as long as the vendor takes; a checkbox is one click and
 /// then the same write; a proof of work pays for cores against a difficulty the
-/// page chose. One flat number lets the slowest kind set the timeout for the
-/// fastest, and on a page carrying two widgets the first widget spends what the
-/// second one needed.
+/// page chose; a grid pays for a classifier's first load, a paced study of the
+/// question and one approach per tile it picks. One flat number lets the slowest
+/// kind set the timeout for the fastest, and on a page carrying two widgets the
+/// first widget spends what the second one needed.
 ///
 /// A kind with no row here gets [`BUDGET_MS`].
 const KIND_BUDGET_MS: &[(&str, u64)] = &[
     ("score", 20_000),
     ("checkbox", 10_000),
+    ("visual", 30_000),
     ("slider", 15_000),
     ("pow", 45_000),
 ];
@@ -270,6 +273,7 @@ impl ChallengeConfig {
             "drag_deck": deck(seed, DRAG_SALT, drag_profile),
             "prelude_deck": deck(seed, PRELUDE_SALT, prelude_plan),
             "key_deck": deck(seed, KEY_SALT, key_plan),
+            "grid_deck": deck(seed, GRID_SALT, grid_plan),
             "key_layout": { "hot": hot_pairs() },
         });
         if let Some(dir) = self.modules.as_ref() {
@@ -392,6 +396,9 @@ fn with_dynamics(raw: &str) -> String {
     if !map.contains_key("keys") {
         map.entry("key_deck").or_insert_with(|| deck(seed, KEY_SALT, key_plan));
     }
+    if !map.contains_key("grid_pace") {
+        map.entry("grid_deck").or_insert_with(|| deck(seed, GRID_SALT, grid_plan));
+    }
     // The pair table is not a shape a caller names: it is how the engine reads the
     // classes the deck is keyed by, so a caller that ships its own keystroke plan
     // still gets it.
@@ -417,13 +424,14 @@ fn source_modules() -> Option<PathBuf> {
 /// Environment variable naming the dynamics seed, so a run can be replayed.
 pub const SEED_ENV: &str = "LURIEN_DYNAMICS_SEED";
 
-/// Salts, so one seed yields four unrelated decks rather than four views of one
+/// Salts, so one seed yields five unrelated decks rather than five views of one
 /// stream: a session whose drags mirror its approaches, or whose keystrokes move
 /// with its pointer, is a correlation a vendor can measure across visits.
 const TRAJECTORY_SALT: u64 = 0x5f37_2d1b;
 const DRAG_SALT: u64 = 0xb1c9_44a7;
 const PRELUDE_SALT: u64 = 0x27e6_8f03;
 const KEY_SALT: u64 = 0x6d21_c95e;
+const GRID_SALT: u64 = 0xa4f1_37d5;
 
 /// The seed the session's dynamics are drawn from.
 ///
@@ -730,6 +738,42 @@ fn prelude_plan(rng: &mut rand::rngs::StdRng) -> serde_json::Value {
         "scroll": scroll,
         "wander": wander,
         "dwell_ms": u64::try_from(ActionDelay::hover_dwell().as_millis()).unwrap_or(320),
+    })
+}
+
+/// Selections one grid answer can need. The largest tile grid vendors ship is four
+/// by four, and every tile can be a match.
+const GRID_SELECTIONS: usize = 16;
+
+/// The pacing of one grid answer: the look at the question, the gap between
+/// selections, and the pause before the set is confirmed.
+///
+/// A tile grid is the one kind where the timing is the whole behavioural signal:
+/// the clicks are trusted and land on the right tiles either way, so what is left
+/// to score is how long the visitor looked and how evenly the picks came. Nine
+/// clicks in nine milliseconds, or nine clicks exactly 300 ms apart, are both
+/// machines.
+///
+/// The pauses come from the pacing library's own draw, as the prelude's do, and one
+/// selection in the set is given a longer look drawn from `rng`, so a seeded deck
+/// replays which pick was hesitated over.
+fn grid_plan(rng: &mut rand::rngs::StdRng) -> serde_json::Value {
+    use guise::human::timing::ActionDelay;
+    use rand::Rng;
+    let ms = |value: std::time::Duration, fallback: u64| {
+        u64::try_from(value.as_millis()).unwrap_or(fallback)
+    };
+    let mut gaps: Vec<u64> = (0..GRID_SELECTIONS)
+        .map(|_| ms(ActionDelay::before_click(), 420))
+        .collect();
+    // One tile is looked at twice: a visitor reading a grid is not equally sure of
+    // every picture, and a run of gaps drawn from one envelope has no such tell.
+    let hesitated = rng.gen_range(0..gaps.len());
+    gaps[hesitated] = gaps[hesitated] + ms(ActionDelay::idle(), 900);
+    serde_json::json!({
+        "study_ms": ms(ActionDelay::form_field_transition(), 800),
+        "gap_ms": gaps,
+        "final_ms": ms(ActionDelay::before_click(), 500),
     })
 }
 

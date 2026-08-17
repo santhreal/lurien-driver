@@ -121,8 +121,11 @@ Proof: `lurien/tests/e2e_geo.sh`, `e2e_clock.sh`.
 
 ## Limits
 
-- `visual` and `audio` are refused. Both have primitives in the engine and no
-  scorecard row, so the solver names them rather than reporting a pass.
+- `audio` is refused. It has primitives in the engine and no scorecard row, so the
+  solver names it rather than reporting a pass.
+- `visual` is claimed against a fixture grid and needs a local CLIP model. The
+  shipped vendor bindings for it carry no `[grid]` table, so a live hCaptcha,
+  reCAPTCHA or Arkose grid is recognized and then refused by name.
 - Live-vendor rows exist for `none` and `score`. The interactive kinds are proven
   by fixtures, which prove the mechanism and not the arms race.
 - Matched-host Linux Firefox only. A cross-OS persona is refused, because fonts,
