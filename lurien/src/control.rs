@@ -58,7 +58,7 @@ impl Control {
         drop(listener);
         Ok(Self {
             port,
-            token: token(),
+            token: crate::token::session_token(),
         })
     }
 
@@ -300,17 +300,6 @@ fn shift_of(reply: &str, op: &str) -> Result<i64, Error> {
         .ok_or_else(|| Error::ControlUnavailable {
             detail: format!("the reply to {op} names no clock shift: {reply:?}. Check that nothing else took the port"),
         })
-}
-
-/// A token no other process on this host can guess.
-fn token() -> String {
-    use rand::{Rng, SeedableRng};
-    let mut rng = rand::rngs::StdRng::from_entropy();
-    let mut hex = String::with_capacity(48);
-    for _ in 0..24 {
-        hex.push_str(&format!("{:02x}", rng.gen::<u8>()));
-    }
-    hex
 }
 
 #[cfg(test)]

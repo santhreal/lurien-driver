@@ -43,6 +43,7 @@ pub mod serve;
 pub mod shot;
 pub mod session;
 pub mod snapshot;
+pub mod token;
 pub mod verb;
 pub mod version;
 

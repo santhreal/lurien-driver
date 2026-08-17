@@ -97,6 +97,67 @@ pub struct EngineOutcome {
     pub url: String,
 }
 
+/// Where the perception helper listens, and the token that makes it this
+/// session's helper.
+///
+/// Loopback is not access control: every process on the host can reach the port,
+/// so an unauthenticated helper is a perception service anything local can queue
+/// work on, and the crops this session sends are readable by whatever answers
+/// first. The token is minted per session by whoever starts both processes and
+/// passed to the helper as `--token`.
+#[derive(Debug, Clone)]
+pub struct HelperEndpoint {
+    host: String,
+    port: u16,
+    token: String,
+}
+
+impl HelperEndpoint {
+    /// A helper on loopback with a freshly minted token.
+    ///
+    /// # Errors
+    ///
+    /// If the host is not loopback, or the port is zero: the engine refuses both,
+    /// and refusing here means a session is not launched believing it has a helper.
+    pub fn new(host: impl Into<String>, port: u16) -> Result<Self, crate::Error> {
+        let host = host.into();
+        if !matches!(host.as_str(), "127.0.0.1" | "::1" | "localhost") {
+            return Err(crate::Error::Other(format!(
+                "helper host {host} is not loopback. Run the helper on 127.0.0.1; \
+                 a crop never leaves this host."
+            )));
+        }
+        if port == 0 {
+            return Err(crate::Error::Other(
+                "a helper needs the port it is listening on, not 0. Start lurien-vision \
+                 first and read the port it prints."
+                    .to_string(),
+            ));
+        }
+        Ok(Self {
+            host,
+            port,
+            token: crate::token::session_token(),
+        })
+    }
+
+    /// The token the helper process must be started with.
+    #[must_use]
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+
+    /// The port the helper listens on.
+    #[must_use]
+    pub const fn port(&self) -> u16 {
+        self.port
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({ "host": self.host, "port": self.port, "token": self.token })
+    }
+}
+
 /// Configuration handed to the engine for one session.
 #[derive(Debug, Clone)]
 pub struct ChallengeConfig {
@@ -108,7 +169,7 @@ pub struct ChallengeConfig {
     /// Total budget per page.
     pub budget_ms: u64,
     /// Loopback helper for the pixel and audio kinds.
-    pub helper: Option<(String, u16)>,
+    pub helper: Option<HelperEndpoint>,
     /// A configuration supplied whole by the caller, passed to the engine
     /// unchanged. A fixture run and a helper-equipped run both need to name their
     /// own catalog, and rebuilding it from parts here would silently drop what
@@ -162,8 +223,8 @@ impl ChallengeConfig {
         if let Some(dir) = self.modules.as_ref() {
             config["modules"] = serde_json::Value::String(dir.display().to_string());
         }
-        if let Some((host, port)) = self.helper.as_ref() {
-            config["helper"] = serde_json::json!({ "host": host, "port": port });
+        if let Some(helper) = self.helper.as_ref() {
+            config["helper"] = helper.to_json();
         }
         config.to_string()
     }
@@ -652,6 +713,44 @@ mod tests {
             serde_json::from_str(&ChallengeConfig::for_process().to_env_value())
                 .expect("config is json");
         assert_eq!(shipped["kind_budget_ms"], table);
+    }
+
+    /// A helper reachable without a token is a perception service every process on
+    /// the host can queue work on, and the crops of this session are readable by
+    /// whatever answers first. The token is minted here, per endpoint, and it is
+    /// what the engine puts on every line.
+    #[test]
+    fn a_helper_is_addressed_with_a_token_this_session_minted() {
+        let one = HelperEndpoint::new("127.0.0.1", 5001).expect("loopback helper");
+        let two = HelperEndpoint::new("localhost", 5001).expect("loopback helper");
+        assert_eq!(one.token().len(), 48, "a helper token is 24 bytes of hex");
+        assert_ne!(one.token(), two.token(), "two helpers share one token");
+
+        // Built here rather than read from the process environment: a caller-supplied
+        // config is passed through whole, and this is about the config the driver
+        // composes.
+        let config = ChallengeConfig {
+            evidence: PathBuf::from("/tmp/lurien-helper-test.jsonl"),
+            modules: None,
+            budget_ms: BUDGET_MS,
+            helper: Some(one.clone()),
+            verbatim: None,
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&config.to_env_value()).expect("config is json");
+        assert_eq!(value["helper"]["port"], 5001);
+        assert_eq!(value["helper"]["token"], one.token());
+
+        // An address the engine would refuse is refused before a session launches
+        // believing it has a helper.
+        for (host, port) in [("10.0.0.5", 5001u16), ("127.0.0.1", 0)] {
+            let err = HelperEndpoint::new(host, port).expect_err("must refuse");
+            let text = err.to_string();
+            assert!(
+                text.contains("loopback") || text.contains("listening on"),
+                "the refusal says nothing about what to fix: {text}"
+            );
+        }
     }
 
     /// A caller-supplied config names a catalog, not a mouse. Without this the

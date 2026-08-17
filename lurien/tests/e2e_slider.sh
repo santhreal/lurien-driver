@@ -23,6 +23,9 @@ fixtures="$root/captcha/kinds/fixtures"
 work="$(mktemp -d)"
 port="${FIXTURE_PORT:-$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')}"
 helper_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
+# Loopback reaches every process on this host, so the helper is private only for as
+# long as this token is.
+helper_token="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 evidence="$work/evidence.jsonl"
 
 cleanup() {
@@ -44,8 +47,9 @@ cp "$fixtures/challenge_slider.html" "$work/www/"
 ( cd "$work/www" && exec python3 -m http.server "$port" --bind 0.0.0.0 >/dev/null 2>&1 ) &
 server_pid=$!
 
-# The helper is a separate process on loopback. It sees one crop and nothing else.
-"$vision" --port "$helper_port" > "$work/helper.log" 2>&1 &
+# The helper is a separate process on loopback. It sees one crop and nothing else,
+# and it answers only for this session's token: loopback is not access control.
+"$vision" --port "$helper_port" --token "$helper_token" > "$work/helper.log" 2>&1 &
 helper_pid=$!
 
 for _ in $(seq 1 40); do
@@ -88,7 +92,7 @@ cat > "$work/config.json" <<JSON
   "budget_ms": 12000,
   "claimed_kinds": ["none", "score", "checkbox", "pow", "slider", "fail"],
   "poll_ms": 200,
-  "helper": { "host": "127.0.0.1", "port": $helper_port }
+  "helper": { "host": "127.0.0.1", "port": $helper_port, "token": "$helper_token" }
 }
 JSON
 
@@ -158,4 +162,40 @@ if row["solved"] is not False:
 print(f"ok: a linear travel was refused: {row['error']}")
 PY
 
-echo "PASS: the engine measured the notch, dragged the handle like a hand, and was refused when it did not"
+# Phase 4: the helper's own door. Loopback reaches every process on this host, so
+# a helper that answers a line without this session's token is a perception service
+# anything local can queue work on and read answers from.
+python3 - "$helper_port" "$helper_token" <<'PY'
+import json, socket, sys
+
+port, token = int(sys.argv[1]), sys.argv[2]
+crop = {"kind": "slider", "task": "axis", "png": "", "width": 300, "height": 65}
+
+
+def ask(request):
+    s = socket.create_connection(("127.0.0.1", port), timeout=5)
+    s.sendall((json.dumps(request) + "\n").encode())
+    reply = s.makefile("r").readline()
+    s.close()
+    return json.loads(reply)
+
+
+for name, request in [
+    ("no token", {"v": 1, **crop}),
+    ("empty token", {"v": 1, "token": "", **crop}),
+    ("wrong token", {"v": 1, "token": "0" * len(token), **crop}),
+    ("no version", {"token": token, **crop}),
+]:
+    reply = ask(request)
+    if "error" not in reply or "dx" in reply:
+        print(f"FAIL: the helper answered a request with {name}: {reply}")
+        sys.exit(1)
+
+reply = ask({"v": 1, "token": token, **crop})
+if reply.get("error") is None or "png" not in reply["error"]:
+    print(f"FAIL: an authenticated request was not read as a request: {reply}")
+    sys.exit(1)
+print("ok: the helper refused every unauthenticated line and read the authenticated one")
+PY
+
+echo "PASS: the engine measured the notch, dragged the handle like a hand, was refused when it did not, and the helper refused every line without this session's token"

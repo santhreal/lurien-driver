@@ -57,6 +57,13 @@
   only said somebody ran something once; a claim proved against an older browser, or
   an older driver minor version, is now red until the run is repeated. The engine
   version comes from `engine/upstream.sh`, so nobody maintains a second copy of it.
+- The perception helper is authenticated. Every line carries the protocol version and
+  a per-session token, compared in constant time, and `lurien-vision` refuses to start
+  without one. Loopback is not access control: any process on the host could queue
+  work on the helper and read the answers, which are measurements of this session's
+  page. The protocol is documented with its version in `docs/HELPERS.md`.
+- `lurien::token::session_token` is the one minter for both loopback channels, the
+  control socket and the helper, so neither can grow a weaker token of its own.
 - The `pow` kind is solved in the browser with no helper process. The binding's
   `[work]` table says where the challenge and difficulty live and where the answer
   goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by

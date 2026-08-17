@@ -7,9 +7,25 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Version of this line protocol.
+///
+/// The helper and the browser ship as separate builds and are wired together by
+/// whoever starts them, so a mismatched pair is a normal operational state rather
+/// than a bug. A version on every line turns it into one refusal instead of a
+/// field-by-field misreading of a request. `HelperSock.sys.mjs` sends this number
+/// and the tests hold the two copies equal.
+pub const PROTOCOL_VERSION: u64 = 1;
+
 /// What the engine asks for.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Request {
+    /// Protocol version the caller speaks. A request that names none is from a
+    /// build older than the version itself, which is not this protocol.
+    #[serde(default)]
+    pub v: u64,
+    /// This session's helper token, minted by whoever started both processes.
+    #[serde(default)]
+    pub token: String,
     /// Challenge kind. Only `slider` is answered here.
     pub kind: String,
     /// Task within the kind. Only `axis` is answered here.

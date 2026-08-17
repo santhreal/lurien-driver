@@ -21,7 +21,7 @@ this tree, so it stays a separate crate and never learns that lurien exists.
 | `captcha/kinds/` | vendor TOML | — (data) | — |
 | `lurien/kinds` | symlink to `captcha/kinds` | — | — |
 | `captcha/vision/` | `lurien-vision`: the slider measurement helper, one crop in, one axis out | png, serde | foxdriver, page, guise, lurien |
-| `docs/` | plan + this file | — | — |
+| `docs/` | plan, verb reference, selectors, batch, kinds, helper protocol (`HELPERS.md`), and this file | — | — |
 
 All of these directories live under `software/browser/`.
 
@@ -57,7 +57,8 @@ Scanners keep `guise-*` crate names. They do not import `lurien` or `foxdriver`.
 | `src/mcp.rs`, `src/serve.rs`, `bins/lurien.rs` | faces | Transports. They read the registry; they never match on a verb name and never import `verb::<domain>::`. `serve.rs` also owns the legacy wire names, and each maps onto a verb rather than reimplementing one. It also owns session lifecycle: every named session carries an age and an idle clock, `sessions` reports both, and a session untouched for `LURIEN_SESSION_IDLE_MS` is closed by the reaper rather than leaked. |
 | `src/launch.rs`, `resolve.rs`, `goto.rs` | launch contract | Engine required, missing binary is `Err`, captcha is a property of `goto`. |
 | `build.rs`, `src/catalog.rs` | vendor catalog | `build.rs` compiles `captcha/kinds/*.toml` into a table; `catalog.rs` turns it into probe selectors and token hooks, addressed by kind only. No Rust source names a vendor, and a test proves it. |
-| `src/challenge.rs` | engine handshake | Owns `LURIEN_CHALLENGE`: the catalog JSON, the evidence path, the budget, the claimed kinds, and the approach path sampled from guise. Reads evidence rows back; never solves anything itself. |
+| `src/challenge.rs` | engine handshake | Owns `LURIEN_CHALLENGE`: the catalog JSON, the evidence path and its schema version, the budgets, the claimed kinds, the sampled dynamics decks, and the helper endpoint with its token. Reads evidence rows back; never solves anything itself. |
+| `src/token.rs` | tokens for local channels | One minter for the control channel and the helper: 24 bytes of OS entropy as hex. Loopback is not access control, so a channel is private only for as long as its token is unguessable. Reference: `docs/HELPERS.md`. |
 
 `docs/VERBS.md` is generated from the registry. A stale copy fails
 `cargo test -p lurien-driver --test verb_registry`.
