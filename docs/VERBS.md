@@ -27,6 +27,7 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 
 | Verb | Arguments | Output | Stability | Summary |
 |---|---|---|---|---|
+| `choose-files` | `trigger`, `files`, `timeout_ms?` | text | stable | Press what opens a file chooser and give the chooser these files. |
 | `click` | `selector`, `timeout_ms?` | text | stable | Click an element, waiting for it to be actionable. |
 | `count` | `selector` | json | stable | Number of elements matching a selector, total and visible. |
 | `fill` | `selector`, `text`, `timeout_ms?` | text | stable | Focus a field and type text, waiting for it to be actionable. |
@@ -85,6 +86,9 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 | `dialog` | `action`, `text?`, `frame?` | text | stable | Accept or dismiss the open dialog, optionally with prompt text. |
 | `dialog-clear` | - | text | stable | Empty the dialog log so the next read shows only new dialogs. |
 | `dialogs` | - | json | stable | Dialogs captured, dialogs still open, and downloads. |
+| `download-save` | `path`, `name?`, `timeout_ms?` | json | stable | Save a downloaded file to a path, waiting for it if it is still arriving. |
+| `download-wait` | `name?`, `timeout_ms?` | json | stable | Wait for a download to finish and report where the file landed. |
+| `downloads` | - | json | stable | Files this session downloaded, with status, local path and size. |
 
 ## observe
 

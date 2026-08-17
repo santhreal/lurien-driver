@@ -88,6 +88,10 @@ fn global_args() -> Vec<Arg> {
             .long("proxy")
             .global(true)
             .help("Proxy URL. An unreachable proxy is an error, never a direct fallback."),
+        Arg::new("download-dir")
+            .long("download-dir")
+            .global(true)
+            .help("Directory downloads land in. Default is a fresh one per session."),
     ]
 }
 
@@ -251,6 +255,7 @@ fn launch_options(matches: &ArgMatches) -> Result<BrowserLaunchOptions, Error> {
         headless: matches.get_flag("headless"),
         profile_dir: matches.get_one::<String>("profile-dir").cloned(),
         proxy,
+        download_dir: matches.get_one::<String>("download-dir").cloned(),
     })
 }
 

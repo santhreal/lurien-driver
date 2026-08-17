@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Download fixture</title>
+<!--
+  Two ways a page hands a file over: a link the browser saves because of the
+  download attribute, and a blob a script builds and clicks. Both must land in
+  the session download directory with no prompt.
+-->
+<h1>Files</h1>
+<a id="direct" href="payload.bin" download="payload.bin">Save the payload</a>
+<button id="generated">Save a generated report</button>
+<script>
+  document.getElementById('generated').addEventListener('click', () => {
+    const blob = new Blob(['generated,report\n1,2\n'], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'report.csv';
+    a.click();
+  });
+</script>

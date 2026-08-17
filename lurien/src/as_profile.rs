@@ -35,6 +35,7 @@ pub async fn as_profile(
         headless,
         profile_dir: Some(dest_owned.to_string_lossy().into_owned()),
         proxy,
+        ..LaunchOptions::default()
     })
     .await?;
     Ok((page, report))

@@ -119,6 +119,17 @@
   `LURIEN_SESSION_IDLE_MS` (default 900000, `0` disables) is closed. A client that
   dies mid-session used to leak its browser, profile directory and display for the
   life of the server.
+- Downloads. `downloads`, `download-wait` and `download-save` work against a
+  directory per session, pointed at by prefs written before the first navigation
+  so no file goes to the real Downloads folder and no save prompt can hang an
+  unattended run. A download counts as finished when its bytes are on disk, not
+  when the browser announces it, and a file that never arrives is refused with
+  what the page did start. `--download-dir` and a `download_dir` argument name the
+  directory when a caller wants a fixed one.
+- `choose-files` drives a page that opens the file chooser itself. The chooser is
+  armed, the trigger is pressed, and the click that would open the native picker
+  has its default action cancelled, so the files reach the input the page meant
+  and no dialog is left for nobody to answer. The page's own listeners still run.
 - A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
   `drag_profile` and `prelude` when it names none. Without this the engine fell
   back to a built-in constant, so every session moved identically.

@@ -73,7 +73,7 @@ pub fn automation_prefs() -> String {
 /// browser serves its REAL UA while the JS layer claims the persona's, the exact
 /// JS-vs-HTTP mismatch this module exists to prevent. Backslash is escaped first
 /// so the other escapes are not doubled.
-fn escape_pref_value(s: &str) -> String {
+pub fn escape_pref_value(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for c in s.chars() {
         match c {

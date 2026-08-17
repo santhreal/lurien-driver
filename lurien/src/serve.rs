@@ -372,6 +372,29 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             };
             "upload"
         }
+        // A page that opens the chooser itself: press the trigger, answer the
+        // chooser it opens.
+        "choose_files" | "dom_choose_files" | "file_chooser" => {
+            args.set(
+                "trigger",
+                command
+                    .any_arg(&["trigger", "selector", "button"])
+                    .ok_or("trigger is required: what opens the chooser")?,
+            );
+            match command.arg_array("files").or_else(|| command.arg_array("paths")) {
+                Some(files) => args.set("files", files),
+                None => args.set(
+                    "files",
+                    command
+                        .any_arg(&["path", "file", "filepath", "files"])
+                        .ok_or("path is required for choose_files")?,
+                ),
+            };
+            if let Some(ms) = command.arg("timeout_ms").and_then(|v| v.parse::<i64>().ok()) {
+                args.set("timeout_ms", ms);
+            }
+            "choose-files"
+        }
         "dom_key" => {
             args.set("key", command.arg("key").ok_or("key is required")?);
             "press"
@@ -404,6 +427,33 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             "signals"
         }
         "dom_downloads" | "dialog_list" => "dialogs",
+        // The legacy name keeps returning the whole dialog log; the download verbs
+        // are reachable under their own names.
+        "downloads" | "download_list" => "downloads",
+        "download_wait" | "dom_download_wait" => {
+            if let Some(name) = command.any_arg(&["name", "file", "filename"]) {
+                args.set("name", name);
+            }
+            if let Some(ms) = command.arg("timeout_ms").and_then(|v| v.parse::<i64>().ok()) {
+                args.set("timeout_ms", ms);
+            }
+            "download-wait"
+        }
+        "download_save" | "dom_download_save" => {
+            args.set(
+                "path",
+                command
+                    .any_arg(&["path", "dest", "filepath"])
+                    .ok_or("path is required: where to write the file")?,
+            );
+            if let Some(name) = command.any_arg(&["name", "file", "filename"]) {
+                args.set("name", name);
+            }
+            if let Some(ms) = command.arg("timeout_ms").and_then(|v| v.parse::<i64>().ok()) {
+                args.set("timeout_ms", ms);
+            }
+            "download-save"
+        }
         "dialog" => {
             args.set(
                 "action",
@@ -1029,6 +1079,9 @@ impl Registry {
                 .filter(|d| !d.is_empty())
                 .map(str::to_string),
             proxy: proxy_of(command)?,
+            download_dir: command
+                .any_arg(&["download_dir", "downloads_dir"])
+                .map(str::to_string),
             ..LaunchOptions::default()
         }));
         self.sessions

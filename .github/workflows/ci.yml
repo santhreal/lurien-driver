@@ -84,6 +84,7 @@ jobs:
         run: |
           node --check lurien/src/locator.js
           node --check lurien/src/snapshot.js
+          node --check lurien/src/chooser.js
 
   e2e-scripts:
     runs-on: ubuntu-latest

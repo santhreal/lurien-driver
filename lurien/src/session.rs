@@ -49,6 +49,12 @@ impl Session {
     /// Explicit launch options.
     #[must_use]
     pub fn with_options(opts: LaunchOptions) -> Self {
+        let mut opts = opts;
+        // Resolved here, not at launch, so a verb can read where this session's
+        // downloads land before the engine exists.
+        if opts.download_dir.is_none() {
+            opts.download_dir = Some(crate::download::session_dir());
+        }
         Self {
             opts,
             browser: Mutex::new(None),

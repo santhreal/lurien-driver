@@ -3,7 +3,7 @@
 use crate::error::Error;
 use crate::locator;
 use crate::session::Session;
-use crate::verb::{ArgSpec, ArgType, Args, Domain, Output, OutputKind, Stability, VerbFuture, VerbSpec};
+use crate::verb::{Args, Domain, Output, OutputKind, Stability, VerbFuture, VerbSpec};
 
 /// Registry entry. Faces read this; they never hardcode the verb.
 pub static SPEC: VerbSpec = VerbSpec {

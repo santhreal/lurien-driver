@@ -41,7 +41,7 @@ pub use lurien::{
     resolve_lurien_bin,
 };
 pub use session_age::{apply_session_age, generate_session_age, session_age_js, SessionAgeSeed};
-pub use userjs::{automation_prefs, build_user_js};
+pub use userjs::{automation_prefs, build_user_js, escape_pref_value};
 
 /// Launch Firefox with the given profile applied at both the pref layer
 /// (`user.js`) and the JS runtime layer (`evaluate` + `preload`).

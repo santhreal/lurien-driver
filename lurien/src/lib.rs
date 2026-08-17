@@ -24,6 +24,8 @@
 pub mod as_profile;
 pub mod catalog;
 pub mod challenge;
+pub mod chooser;
+pub mod download;
 pub mod error;
 pub mod goto;
 pub mod launch;

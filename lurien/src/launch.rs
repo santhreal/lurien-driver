@@ -16,6 +16,9 @@ pub struct LaunchOptions {
     pub profile_dir: Option<String>,
     /// Optional proxy. Unreachable proxy does not fall back to direct.
     pub proxy: Option<ProxyConfig>,
+    /// Directory downloads land in. Resolved per session, so two sessions never
+    /// overwrite each other's file of the same name.
+    pub download_dir: Option<String>,
 }
 
 impl Default for LaunchOptions {
@@ -25,6 +28,7 @@ impl Default for LaunchOptions {
             headless: false,
             profile_dir: None,
             proxy: None,
+            download_dir: None,
         }
     }
 }
@@ -54,6 +58,15 @@ pub async fn launch_with_options(opts: LaunchOptions) -> Result<Page, Error> {
         }
     })?;
 
+    // Downloads must land somewhere this session can read, with no prompt: a pref
+    // set after startup would miss a file the first page starts.
+    let downloads = std::path::PathBuf::from(
+        opts.download_dir
+            .clone()
+            .unwrap_or_else(crate::download::session_dir),
+    );
+    crate::download::ensure_dir(&downloads)?;
+
     // The engine solves at the level that can see the widget. It is inert unless
     // this variable is present, so a session that never asked is never observed.
     let challenge = crate::challenge::ChallengeConfig::for_process();
@@ -64,6 +77,7 @@ pub async fn launch_with_options(opts: LaunchOptions) -> Result<Page, Error> {
         viewport_width: 1280,
         viewport_height: 720,
         env: vec![challenge.env_entry()],
+        user_js_content: Some(crate::download::prefs(&downloads)),
         ..Default::default()
     };
     guise::browser::launch_with_config(&bin, &opts.profile, config)

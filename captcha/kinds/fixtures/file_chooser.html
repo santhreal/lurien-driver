@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>File chooser fixture</title>
+<!--
+  The shape `upload` cannot drive: the input is hidden, and the page opens the
+  chooser itself from a click handler on a styled button. Whatever answers the
+  chooser must leave the page's own change handler running, which is what writes
+  the result below.
+-->
+<h1>Attach</h1>
+<input id="hidden-input" type="file" name="resume" multiple style="display:none">
+<button id="attach">Attach a resume</button>
+<p id="result">nothing attached</p>
+<p id="clicks">clicks seen: 0</p>
+<script>
+  let clicks = 0;
+  const input = document.getElementById('hidden-input');
+  const result = document.getElementById('result');
+  document.getElementById('attach').addEventListener('click', () => {
+    // The page opens the chooser itself. Nothing outside the page can name the
+    // input from the button.
+    input.click();
+  });
+  // The page's own listener on the intercepted click must still fire.
+  input.addEventListener('click', () => {
+    clicks += 1;
+    document.getElementById('clicks').textContent = 'clicks seen: ' + clicks;
+  });
+  input.addEventListener('change', () => {
+    const names = Array.from(input.files).map(f => f.name + ':' + f.size);
+    result.textContent = names.length ? 'attached ' + names.join(', ') : 'nothing attached';
+  });
+</script>

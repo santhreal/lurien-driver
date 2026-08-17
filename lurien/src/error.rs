@@ -125,6 +125,29 @@ pub enum Error {
         /// Path of the wrapper log.
         log_path: String,
     },
+    /// The session's download directory cannot be created or written.
+    #[error(
+        "download directory {path} is unusable: {detail}. \
+         Set LURIEN_DOWNLOAD_DIR to a writable directory, or fix its permissions."
+    )]
+    DownloadDirUnusable {
+        /// Directory that was refused.
+        path: String,
+        /// Why it was refused.
+        detail: String,
+    },
+    /// No download finished in time, the browser canceled one, or the bytes could
+    /// not be copied where the caller asked.
+    #[error(
+        "download {file:?} did not arrive: {detail}. \
+         Check `downloads` for what the page started, and raise timeout_ms for a slow file."
+    )]
+    DownloadFailed {
+        /// Filename or pattern the caller asked for.
+        file: String,
+        /// What happened instead.
+        detail: String,
+    },
     /// A face sent a verb that is not in the registry.
     #[error("unknown verb {name:?}. Run `lurien verbs` for the registry.")]
     UnknownVerb {
@@ -264,6 +287,14 @@ mod tests {
             Error::HardCaptcha { kind: "visual".into() },
             Error::ScoreFailed { detail: "no token after 8000ms".into() },
             Error::EngineCrash { log_path: "/tmp/lurien.log".into() },
+            Error::DownloadDirUnusable {
+                path: "/mnt/ro/dl".into(),
+                detail: "read-only file system".into(),
+            },
+            Error::DownloadFailed {
+                file: "invoice.pdf".into(),
+                detail: "nothing finished within 15000ms".into(),
+            },
             Error::UnknownVerb { name: "teleport".into() },
             Error::BadArgs {
                 verb: "click".into(),
@@ -304,6 +335,8 @@ mod tests {
                 | Error::HardCaptcha { .. }
                 | Error::ScoreFailed { .. }
                 | Error::EngineCrash { .. }
+                | Error::DownloadDirUnusable { .. }
+                | Error::DownloadFailed { .. }
                 | Error::UnknownVerb { .. }
                 | Error::BadArgs { .. }
                 | Error::Unresolved { .. }

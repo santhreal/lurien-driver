@@ -1,5 +1,6 @@
 //! Element-scoped work. Every verb here takes a selector or its text.
 
+mod choose_files;
 mod click;
 mod count;
 mod fill;
@@ -12,6 +13,7 @@ use crate::verb::VerbSpec;
 
 /// Verbs of this domain. A new verb is one line here plus its own file.
 pub static SPECS: &[&VerbSpec] = &[
+    &choose_files::SPEC,
     &click::SPEC,
     &count::SPEC,
     &fill::SPEC,
