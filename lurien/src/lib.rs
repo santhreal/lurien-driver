@@ -34,6 +34,7 @@ pub mod mcp;
 pub mod profile_import;
 pub mod resolve;
 pub mod serve;
+pub mod shot;
 pub mod session;
 pub mod snapshot;
 pub mod verb;

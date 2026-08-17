@@ -405,7 +405,20 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             }
             "wait"
         }
-        "dom_screenshot" => "screenshot",
+        "dom_screenshot" | "screenshot" | "page_screenshot" => {
+            for key in ["path", "clip", "selector", "frame"] {
+                if let Some(value) = command.arg(key) {
+                    args.set(key, value);
+                }
+            }
+            if let Some(full) = command.arg("full_page").or_else(|| command.arg("fullpage")) {
+                args.set("full_page", truthy(full));
+            }
+            if let Some(ms) = command.arg("timeout_ms") {
+                args.set("timeout_ms", parse_i64(ms, "timeout_ms")?);
+            }
+            "screenshot"
+        }
         "dom_readonly_eval" | "execute_js" => {
             args.set(
                 "script",

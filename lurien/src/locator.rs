@@ -28,7 +28,7 @@
 //! mutated to mark the match.
 
 use crate::error::Error;
-use runtime_foxdriver::Page;
+use runtime_foxdriver::{FrameId, Page};
 use std::time::{Duration, Instant};
 
 /// The resolver, evaluated in the page on every attempt. `snapshot.js` is
@@ -127,7 +127,7 @@ pub fn default_timeout_ms() -> u64 {
 /// fetch is acted on without an explicit wait. The failure names what was on
 /// screen instead, because "no element matched" alone leaves the caller guessing.
 pub async fn resolve(page: &Page, selector: &str, timeout_ms: u64) -> Result<Resolved, Error> {
-    resolve_with(page, selector, timeout_ms, true).await
+    resolve_with(page, None, selector, timeout_ms, true).await
 }
 
 /// Resolve without requiring the element to be actionable.
@@ -139,7 +139,21 @@ pub async fn resolve_present(
     selector: &str,
     timeout_ms: u64,
 ) -> Result<Resolved, Error> {
-    resolve_with(page, selector, timeout_ms, false).await
+    resolve_with(page, None, selector, timeout_ms, false).await
+}
+
+/// Resolve inside one browsing context, without requiring actionability.
+///
+/// A frame-scoped verb reaches its element through the frame's own document, so
+/// the same selector language works there: the resolver is plain page script and
+/// does not care which document runs it.
+pub async fn resolve_present_in(
+    page: &Page,
+    context: &FrameId,
+    selector: &str,
+    timeout_ms: u64,
+) -> Result<Resolved, Error> {
+    resolve_with(page, Some(context), selector, timeout_ms, false).await
 }
 
 /// How many elements the description fits, and how many of those are visible.
@@ -153,7 +167,7 @@ pub async fn count(page: &Page, selector: &str) -> Result<(usize, usize), Error>
         form = js_string(form.as_str()),
         value = js_string(value),
     );
-    let answer = ask(page, &script, selector).await?;
+    let answer = ask(page, None, &script, selector).await?;
     if answer["ok"].as_bool() != Some(true) {
         return Err(unresolved(selector, &answer, 0));
     }
@@ -162,11 +176,19 @@ pub async fn count(page: &Page, selector: &str) -> Result<(usize, usize), Error>
     Ok((total, visible))
 }
 
-/// One resolver call, parsed.
-async fn ask(page: &Page, script: &str, selector: &str) -> Result<serde_json::Value, Error> {
-    let raw = page
-        .evaluate(script.to_string())
-        .await
+/// One resolver call, parsed. `context` selects the document that runs it; the
+/// active one when it is `None`.
+async fn ask(
+    page: &Page,
+    context: Option<&FrameId>,
+    script: &str,
+    selector: &str,
+) -> Result<serde_json::Value, Error> {
+    let eval = match context {
+        Some(ctx) => page.evaluate_in_context(script.to_string(), ctx).await,
+        None => page.evaluate(script.to_string()).await,
+    };
+    let raw = eval
         .map_err(|e| Error::Other(format!("{selector}: resolver failed: {e}")))?
         .into_value::<String>()
         .map_err(|e| Error::Other(format!("{selector}: resolver returned no answer: {e}")))?;
@@ -176,6 +198,7 @@ async fn ask(page: &Page, script: &str, selector: &str) -> Result<serde_json::Va
 
 async fn resolve_with(
     page: &Page,
+    context: Option<&FrameId>,
     selector: &str,
     timeout_ms: u64,
     actionable: bool,
@@ -189,7 +212,7 @@ async fn resolve_with(
     let started = Instant::now();
     let deadline = started + Duration::from_millis(timeout_ms);
     loop {
-        let answer = ask(page, &script, selector).await?;
+        let answer = ask(page, context, &script, selector).await?;
         if answer["ok"].as_bool() == Some(true) {
             return Ok(Resolved {
                 css: answer["path"].as_str().unwrap_or_default().to_string(),

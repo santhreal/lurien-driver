@@ -130,6 +130,13 @@
   armed, the trigger is pressed, and the click that would open the native picker
   has its default action cancelled, so the files reach the input the page meant
   and no dialog is left for nobody to answer. The page's own listeners still run.
+- `screenshot` captures the viewport, the whole scrollable document, a rectangle,
+  or one element, and takes a `frame` so a cross-origin widget can be pictured
+  without the parent page around it. Every area is one browser-side render:
+  nothing scrolls and nothing is stitched, so an element below the fold costs no
+  page movement and a sticky header appears once. An element is described in the
+  same selector language every act verb takes. Every face now reports a capture's
+  pixel size next to its byte count.
 - A caller-supplied `LURIEN_CHALLENGE` is given a freshly sampled `trajectory`,
   `drag_profile` and `prelude` when it names none. Without this the engine fell
   back to a built-in constant, so every session moved identically.

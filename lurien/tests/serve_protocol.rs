@@ -30,6 +30,8 @@ const LEGACY_COMMANDS: &[&str] = &[
     "dom_key",
     "dom_wait",
     "dom_screenshot",
+    "screenshot",
+    "page_screenshot",
     "choose_files",
     "dom_readonly_eval",
     "execute_js",

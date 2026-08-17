@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>shot geometry</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { height: 3000px; background: #eef2f5; font: 14px sans-serif; }
+  #target {
+    position: absolute; left: 40px; top: 1800px;
+    width: 220px; height: 120px; box-sizing: border-box;
+    background: #204a87; color: #fff;
+  }
+  #snap {
+    position: absolute; left: 60px; top: 2400px;
+    width: 160px; height: 40px; box-sizing: border-box;
+    margin: 0; padding: 0; border: 0; font: 14px sans-serif;
+  }
+  #collapsed { display: none; }
+  #inner { position: absolute; left: 20px; top: 400px; width: 300px; height: 200px; border: 0; }
+</style>
+</head>
+<body>
+<div id="target">a box 220 by 120, far below the fold</div>
+<button id="snap" type="button">Snap</button>
+<div id="collapsed">no box at all</div>
+<iframe id="inner" src="shot_frame.html" title="inner"></iframe>
+<script>
+  // Geometry the test compares captures against, read from the page rather than
+  // assumed, so a different device pixel ratio or window size does not turn a
+  // correct capture into a failure.
+  window.lurienGeometry = function () {
+    const doc = document.documentElement;
+    const box = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + window.scrollX, y: r.top + window.scrollY, width: r.width, height: r.height };
+    };
+    return JSON.stringify({
+      dpr: window.devicePixelRatio,
+      inner_width: window.innerWidth,
+      inner_height: window.innerHeight,
+      scroll_width: doc.scrollWidth,
+      scroll_height: doc.scrollHeight,
+      target: box('#target'),
+      snap: box('#snap')
+    });
+  };
+</script>
+</body>
+</html>

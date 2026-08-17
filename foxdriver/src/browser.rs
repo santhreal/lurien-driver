@@ -119,6 +119,37 @@ async fn wait_for_exit(child: &mut std::process::Child, ticks: u32) -> bool {
 /// Opaque handle to a browsing context (tab or iframe).
 pub type FrameId = rustenium_bidi_definitions::browsing_context::types::BrowsingContext;
 
+/// What a capture covers.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum ShotArea {
+    /// What is on screen now.
+    #[default]
+    Viewport,
+    /// The whole scrollable document, however far past the viewport it runs.
+    Document,
+    /// A rectangle in CSS pixels, measured from the document's top-left corner.
+    Region {
+        /// Distance from the document's left edge.
+        x: f64,
+        /// Distance from the document's top edge.
+        y: f64,
+        /// Rectangle width.
+        width: f64,
+        /// Rectangle height.
+        height: f64,
+    },
+}
+
+/// What to capture and which document to capture it from.
+#[derive(Debug, Clone, Default)]
+pub struct ShotOptions {
+    /// Area of the document to capture.
+    pub area: ShotArea,
+    /// Frame spec accepted by [`Page::resolve_frame`]. `None` is the main
+    /// document.
+    pub frame: Option<String>,
+}
+
 /// A browsing context (frame) with the metadata the agent needs to target it:
 /// the opaque `id` to pass back on a frame-scoped command, plus its `url` and
 /// `name` for disambiguation. Returned by [`Page::list_frames`].
@@ -598,19 +629,84 @@ impl Page {
         Ok(())
     }
 
-    /// Capture a viewport screenshot and return raw PNG bytes.
+    /// Capture a viewport screenshot of the main document and return raw PNG bytes.
     pub async fn screenshot(&self) -> Result<Vec<u8>> {
+        self.screenshot_with(&ShotOptions::default()).await
+    }
+
+    /// Capture PNG bytes of the area `opts` describes, from the document `opts`
+    /// names.
+    ///
+    /// A full-document capture is a single browser-side render, not a
+    /// scroll-and-stitch: nothing in the page moves, so a sticky header appears
+    /// once and a scroll-triggered animation is not fired by the act of taking
+    /// the picture. A region is clipped by the browser at composite time, so a
+    /// rectangle below the fold needs no scrolling either. Naming a frame
+    /// captures that frame's own document, which is the only way to picture a
+    /// cross-origin iframe without the parent's chrome around it.
+    pub async fn screenshot_with(&self, opts: &ShotOptions) -> Result<Vec<u8>> {
+        use rustenium_bidi_definitions::browsing_context::commands::{
+            CaptureScreenshot, CaptureScreenshotOrigin,
+        };
+        use rustenium_bidi_definitions::browsing_context::results::CaptureScreenshotResult;
+        use rustenium_bidi_definitions::browsing_context::types::{
+            BoxClipRectangle, BoxClipRectangleType, ClipRectangle,
+        };
+
+        let context = match &opts.frame {
+            Some(spec) => self.resolve_frame(spec).await?,
+            None => self
+                .mainframe()
+                .await?
+                .ok_or_else(|| anyhow!("screenshot: no active browsing context"))?,
+        };
+        let mut command = CaptureScreenshot::builder().context(context);
+        command = match &opts.area {
+            ShotArea::Viewport => command.origin(CaptureScreenshotOrigin::Viewport),
+            ShotArea::Document => command.origin(CaptureScreenshotOrigin::Document),
+            ShotArea::Region {
+                x,
+                y,
+                width,
+                height,
+            } => {
+                if !(*width > 0.0 && *height > 0.0) {
+                    return Err(anyhow!(
+                        "screenshot: region is {width}x{height}; a capture needs a positive width and height"
+                    ));
+                }
+                let clip = BoxClipRectangle::builder()
+                    .r#type(BoxClipRectangleType::Box)
+                    .x(*x)
+                    .y(*y)
+                    .width(*width)
+                    .height(*height)
+                    .build()
+                    .map_err(|e| anyhow!("screenshot: build clip: {e}"))?;
+                command
+                    .origin(CaptureScreenshotOrigin::Document)
+                    .clip(ClipRectangle::BoxClipRectangle(clip))
+            }
+        };
+        let command = command
+            .build()
+            .map_err(|e| anyhow!("screenshot: build command: {e}"))?;
         let mut browser = self.browser.lock().await;
         let browser = match &mut *browser {
             Some(b) => b,
             None => return Err(anyhow!("browser closed")),
         };
-        let b64 = browser
-            .screenshot()
+        let response = browser
+            .driver_mut()
+            .send_command(command)
             .await
-            .map_err(|e| anyhow!("screenshot failed: {e:?}"))?;
+            .map_err(|e| anyhow!("browsingContext.captureScreenshot failed: {e:?}"))?;
+        let result: CaptureScreenshotResult = response
+            .result
+            .try_into()
+            .map_err(|e| anyhow!("screenshot result parse failed: {e}"))?;
         base64::engine::general_purpose::STANDARD
-            .decode(b64)
+            .decode(result.data)
             .map_err(|e| anyhow!("base64 decode failed: {e}"))
     }
 

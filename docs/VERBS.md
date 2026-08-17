@@ -16,7 +16,7 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 | `forward` | - | text | stable | Go forward one history entry. |
 | `goto` | `url` | json | stable | Navigate. Captcha is automatic (score-class only in v1). No challenge tool. |
 | `reload` | - | none | stable | Reload the active document. |
-| `screenshot` | `path?` | png | stable | Capture a viewport PNG. Writes the file when path is given. |
+| `screenshot` | `path?`, `full_page?`, `clip?`, `selector?`, `frame?`, `timeout_ms?` | png | stable | Capture a PNG of the viewport, the whole page, a rectangle, or one element. |
 | `snapshot` | `format?`, `limit?` | text | stable | The page as roles, names and handles. Handles act as `ref:eN` selectors. |
 | `stop` | - | text | stable | Stop loading the active document. |
 | `title` | - | text | stable | Document title of the active browsing context. |

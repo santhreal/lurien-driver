@@ -304,7 +304,10 @@ impl Output {
             Self::Empty => "ok".to_string(),
             Self::Text(s) => s.clone(),
             Self::Json(v) => serde_json::to_string(v).unwrap_or_else(|_| "null".to_string()),
-            Self::Png(b) => format!("png {} bytes", b.len()),
+            Self::Png(b) => match crate::shot::png_size(b) {
+                Some((w, h)) => format!("png {} bytes, {w}x{h}", b.len()),
+                None => format!("png {} bytes", b.len()),
+            },
         }
     }
 
@@ -315,7 +318,10 @@ impl Output {
             Self::Empty => Value::Null,
             Self::Text(s) => Value::String(s.clone()),
             Self::Json(v) => v.clone(),
-            Self::Png(b) => serde_json::json!({ "png_bytes": b.len() }),
+            Self::Png(b) => {
+                let (width, height) = crate::shot::png_size(b).unwrap_or((0, 0));
+                serde_json::json!({ "png_bytes": b.len(), "width": width, "height": height })
+            }
         }
     }
 

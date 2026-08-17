@@ -83,7 +83,7 @@ pub mod sensors;
 pub use browser::{
     launch_firefox, launch_firefox_self_managed, proxy_prefs, Element, EvaluationResult,
     FoxBrowserConfig, FrameId, FrameInfo, FrameTreeNode, Page, ProxyConfig, ProxyScheme,
-    ScrollDirection,
+    ScrollDirection, ShotArea, ShotOptions,
 };
 pub use cookies::CapturedCookie;
 pub use dialog::{CapturedDialog, CapturedDownload, DialogLog};
