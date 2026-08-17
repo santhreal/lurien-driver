@@ -19,7 +19,7 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = "4.6.0"
 criterion = "0.5.1"
 futures = { version = "0.3" }
-guise-oracle = { path = "guise-oracle", version = "0.1.4" }
+guise-oracle = { path = "guise-oracle", version = "0.1.8" }
 http = "1.4.0"
 proptest = "1.9.0"
 rand = "0.8"

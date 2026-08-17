@@ -1,6 +1,6 @@
 [package]
 name = "guise-echo"
-version = "0.1.6"
+version = "0.1.8"
 description = "Local TLS+H2+TCP echo service for inspecting emitted wire fingerprints"
 keywords = ["tls", "echo", "fingerprint", "testing"]
 homepage = "https://santh.dev"
@@ -16,7 +16,7 @@ status = "beta"
 
 [dependencies]
 anyhow = { workspace = true }
-guise = { path = "../guise", version = "0.1.6", features = ["fingerprint", "http"] }
+guise = { path = "../guise", version = "0.1.8", features = ["fingerprint", "http"] }
 rustls = { workspace = true, features = ["ring"] }
 rustls-pki-types = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

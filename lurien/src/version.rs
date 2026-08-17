@@ -3,7 +3,7 @@
 use crate::resolve::resolve_engine;
 use std::process::Command;
 
-/// `lurien-browser` Cargo package version.
+/// `lurien-driver` Cargo package version.
 #[must_use]
 pub fn crate_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -25,22 +25,22 @@ pub fn engine_version_string(bin: &str) -> Option<String> {
     }
 }
 
-/// One line: crate + engine. Engine missing is named, not silent.
+/// One line: driver + browser. A missing browser is named, not silent.
 #[must_use]
 pub fn version_line() -> String {
     match resolve_engine() {
         Ok(bin) => match engine_version_string(&bin) {
             Some(v) => format!(
-                "lurien-browser {crate} / engine {v}",
+                "lurien-driver {crate} / lurien-browser {v}",
                 crate = crate_version()
             ),
             None => format!(
-                "lurien-browser {crate} / engine {bin} (--version unread)",
+                "lurien-driver {crate} / lurien-browser {bin} (--version unread)",
                 crate = crate_version()
             ),
         },
         Err(_) => format!(
-            "lurien-browser {crate} / engine missing. Run install.sh or set LURIEN_BIN.",
+            "lurien-driver {crate} / lurien-browser missing. Run install.sh or set LURIEN_BIN.",
             crate = crate_version()
         ),
     }

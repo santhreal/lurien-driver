@@ -1,12 +1,21 @@
 # lurien
 
 A Firefox you drive like Playwright. Persona is coherent from TLS to the
-pixel. Captchas are a property of `goto`, classified by kind, solved inside
-the engine.
+pixel. Challenges are a property of `goto`, classified by kind, cleared inside
+the browser.
 
-crates.io / GitHub: **lurien-browser**. Spoken / CLI / MCP: **lurien**.
+Three names, one product:
 
-v1 is Linux x86_64, headful. Playwright talks to the installed engine via
+| Name | What it is |
+|---|---|
+| **lurien-browser** | The browser: a Gecko fork that paints the page, holds the persona in every realm, and clears challenges in the widget's own browsing context. [`santhreal/lurien-browser`](https://github.com/santhreal/lurien-browser), MPL, its own repository and release cadence. |
+| **lurien-driver** | The Rust crate you drive it with: `lurien::Browser`, the `lurien` CLI, `lurien-mcp`, `lurien serve`. This repository. |
+| **lurien** | What you type, and the name of the installed browser binary. |
+
+The driver requires the browser. There is no Firefox fallback and no silent
+degradation: a missing browser is an error that names the install path.
+
+v1 is Linux x86_64, headful. Playwright talks to the installed browser via
 `executablePath`. There is no PyPI package.
 
 ```
@@ -56,7 +65,7 @@ v1 does not download Gecko. Wire a local build:
 ```
 
 or set `LURIEN_BIN`. Missing engine is an error. There is no Firefox fallback.
-Rust: `cargo add lurien-browser`. Bins: `lurien`, `lurien-mcp`.
+Rust: `cargo add lurien-driver`. Bins: `lurien`, `lurien-mcp`.
 
 This tree is one Cargo workspace, so a clone builds with `cargo build` and tests
 with `cargo test --workspace`. Tests that need the engine binary skip loud. The
@@ -86,7 +95,7 @@ Crate *names* stay. Paths are under this folder.
 
 | Crate | Role | Alone |
 |---|---|---|
-| `lurien-browser` | Public face. `Browser::launch`, `lurien` CLI, `lurien serve`, `lurien-mcp` | Needs the engine binary |
+| `lurien-driver` | Public face. `Browser::launch`, `lurien` CLI, `lurien serve`, `lurien-mcp` | Needs the engine binary |
 | `guise` | Persona compiler + (optional) launch | Yes. Default features are data: fingerprint, human timing, HTTP headers. Feature `browser` pulls foxdriver |
 | `guise-profiles` | UA / profile ids | Yes. Pure constants. Scanners already depend on this |
 | `guise-pacing` | Retry backoff, jitter, Retry-After | Yes. No browser |
@@ -103,12 +112,12 @@ using `guise-*` that way.
 ## Layout
 
 ```
-lurien-browser/
+lurien-driver/
   Cargo.toml                workspace root
   README.md                 this file
-  lurien/                   crate lurien-browser
+  lurien/                   crate lurien-driver
   lurien/kinds              symlink to captcha/kinds, so the catalog ships
-  engine/                   Gecko fork, separate repository
+  engine/                   lurien-browser, separate repository
   guise/                    persona
   guise-profiles/ guise-pacing/ guise-choice/ guise-oracle/
   foxdriver/                BiDi

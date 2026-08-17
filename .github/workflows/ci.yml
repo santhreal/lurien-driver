@@ -17,7 +17,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Every crate in the tree. Tests that need the engine binary skip loud.
       - run: cargo test --workspace --all-targets
-      - run: cargo test -p lurien-browser --doc
+      - run: cargo test -p lurien-driver --doc
 
   import-law:
     runs-on: ubuntu-latest
@@ -29,7 +29,7 @@ jobs:
       # layering break, and guise without `browser` must not pull the driver.
       - name: lurien dependency graph
         run: |
-          cargo tree -p lurien-browser --prefix none --no-dedupe > tree.txt
+          cargo tree -p lurien-driver --prefix none --no-dedupe > tree.txt
           for name in captchaforge scanclient wafrift ahura chromiumoxide; do
             if grep -q "^${name} " tree.txt; then echo "lurien pulls ${name}"; exit 1; fi
           done

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8]
+
+### Changed
+- Version unified with the guise family. No API change.
+
 ## [0.1.4] - 2026-08-07
 ### Fixed
 - `BoundedNormalDelay`: Lowered Box-Muller $u_1$ sampling bound from `0.001` to `f64::EPSILON`, resolving artificial distribution truncation that prevented sampling the outer ~3.5% tail of configured delay envelopes near `min_ms` and `max_ms`.

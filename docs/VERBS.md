@@ -1,6 +1,6 @@
 # Verbs
 
-Generated from the registry by `cargo test -p lurien-browser verbs_doc`. Do not edit by hand.
+Generated from the registry by `cargo test -p lurien-driver verbs_doc`. Do not edit by hand.
 
 Every verb is reachable identically from the `lurien` CLI, `lurien-mcp`, and `lurien serve`: one spec, three transports.
 

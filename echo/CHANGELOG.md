@@ -2,6 +2,11 @@
 
 All notable changes to `guise-echo` will be documented in this file.
 
+## [0.1.8]
+
+### Changed
+- Version unified with the guise family. Requires `guise 0.1.8`.
+
 ## [0.1.5] - 2026-08-07
 ### Fixed
 - **H2 Control Frame Length Validation**: Removed early zero-length frame skip in `read_h2_preface_and_frames` that allowed empty `WINDOW_UPDATE` and `PRIORITY` frames to bypass RFC 9113 payload length requirements.

@@ -30,7 +30,7 @@ if [ -z "${ENGINE_BIN}" ] || [ ! -x "${ENGINE_BIN}" ]; then
   exit 0
 fi
 if [ ! -x "${SERVE_BIN}" ]; then
-  echo "SKIP: ${SERVE_BIN} not built (cargo build -p lurien-browser)"
+  echo "SKIP: ${SERVE_BIN} not built (cargo build -p lurien-driver)"
   exit 0
 fi
 

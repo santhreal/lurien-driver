@@ -183,7 +183,7 @@ fn default_value(ty: ArgType, raw: &str) -> Value {
 #[must_use]
 pub fn markdown(registry: &[&VerbSpec]) -> String {
     let mut out = String::from(
-        "# Verbs\n\nGenerated from the registry by `cargo test -p lurien-browser verbs_doc`. \
+        "# Verbs\n\nGenerated from the registry by `cargo test -p lurien-driver verbs_doc`. \
          Do not edit by hand.\n\nEvery verb is reachable identically from the `lurien` CLI, \
          `lurien-mcp`, and `lurien serve`: one spec, three transports.\n",
     );

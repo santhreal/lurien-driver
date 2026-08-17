@@ -1,11 +1,11 @@
 [package]
-name = "lurien-browser"
+name = "lurien-driver"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 authors = ["Santh <64453045+santhreal@users.noreply.github.com>"]
-repository = "https://github.com/santhreal/lurien-browser"
+repository = "https://github.com/santhreal/lurien-driver"
 homepage = "https://santh.dev"
 description = "Playwright-shaped Firefox with a coherent persona. Engine required."
 readme = "README.md"
@@ -27,7 +27,7 @@ path = "bins/lurien-mcp.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-guise = { path = "../guise", version = "0.1.7", default-features = false, features = ["browser"] }
+guise = { path = "../guise", version = "0.1.8", default-features = false, features = ["browser"] }
 rand = { workspace = true }
 runtime-foxdriver = { path = "../foxdriver", version = "0.1.5" }
 serde = { workspace = true, features = ["derive"] }

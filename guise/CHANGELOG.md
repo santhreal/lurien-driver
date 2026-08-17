@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.8]
+
+### Changed
+- The guise family now ships one version. `guise`, `guise-profiles`, `guise-pacing`,
+  `guise-choice`, `guise-oracle`, and `guise-echo` all release as `0.1.8`, so a
+  consumer states one number instead of matching five.
+- Doc comments name the caller, the setting, or the file rather than a person.
+
 ## [0.1.7]
 
 ### Changed

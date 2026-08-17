@@ -1,6 +1,6 @@
 [package]
 name = "guise-profiles"
-version = "0.1.6"
+version = "0.1.8"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"

@@ -535,6 +535,171 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             "intercept-response"
         }
         "dom_clear_intercepts" => "clear-intercepts",
+        // DOM eval alias (same as dom_readonly_eval).
+        "dom_eval" => {
+            args.set("script", command.any_arg(&["code", "script"]).ok_or("code is required")?);
+            if let Some(frame) = command.arg("frame") { args.set("frame", frame); }
+            "eval"
+        }
+        // Checkbox toggle.
+        "dom_check" => {
+            let selector = selector_of(command)?;
+            let checked = command.arg("checked").unwrap_or("true");
+            args.set("script", format!(
+                "(() => {{ const el = document.querySelector({selector:?}); if (el) el.checked = {checked}; return el ? el.checked : null; }})()",
+            ));
+            "eval"
+        }
+        // Combined storage dump.
+        "dom_storage" => {
+            args.set("script",
+                "JSON.stringify({local: {...localStorage}, session: {...sessionStorage}})".to_string());
+            "eval"
+        }
+        // IndexedDB: list databases.
+        "dom_indexeddb" => {
+            let db_name = command.arg("name").unwrap_or("");
+            let script = if db_name.is_empty() {
+                "indexedDB.databases ? indexedDB.databases() : 'not supported'".to_string()
+            } else {
+                format!("new Promise(r => {{ const req = indexedDB.open({db_name:?}); req.onsuccess = () => {{ r(Array.from(req.result.objectStoreNames)); req.result.close(); }}; req.onerror = () => r(req.error); }})")
+            };
+            args.set("script", script);
+            "eval"
+        }
+        // Service workers.
+        "dom_service_workers" => {
+            args.set("script",
+                "navigator.serviceWorker ? navigator.serviceWorker.getRegistrations().then(rs => rs.map(r => r.scope)) : 'unsupported'".to_string());
+            "eval"
+        }
+        // Cache API.
+        "dom_cache" => {
+            let cache_name = command.arg("name").unwrap_or("");
+            let script = if cache_name.is_empty() {
+                "caches ? caches.keys() : 'unsupported'".to_string()
+            } else {
+                format!("caches.open({cache_name:?}).then(c => c.keys().then(rs => rs.map(r => r.url)))")
+            };
+            args.set("script", script);
+            "eval"
+        }
+        // XPath query.
+        "dom_xpath" => {
+            let expr = command.arg("xpath").ok_or("xpath is required")?;
+            args.set("script", format!(
+                "(() => {{ const r = document.evaluate({expr:?}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); const out = []; for (let i = 0; i < r.snapshotLength; i++) out.push(r.snapshotItem(i).textContent?.slice(0, 200)); return out; }})()",
+            ));
+            "eval"
+        }
+        // Get/set attributes.
+        "dom_attr" | "dom_get_attributes" => {
+            let selector = selector_of(command)?;
+            let attr = command.arg("attr_name").unwrap_or("");
+            let script = if attr.is_empty() {
+                format!("(() => {{ const el = document.querySelector({selector:?}); return el ? Object.fromEntries(el.getAttributeNames().map(n => [n, el.getAttribute(n)])) : null; }})()")
+            } else if let Some(val) = command.arg("attr_value") {
+                format!("(() => {{ const el = document.querySelector({selector:?}); if (el) el.setAttribute({attr:?}, {val:?}); return el ? el.getAttribute({attr:?}) : null; }})()")
+            } else {
+                format!("(() => {{ const el = document.querySelector({selector:?}); return el ? el.getAttribute({attr:?}) : null; }})()")
+            };
+            args.set("script", script);
+            "eval"
+        }
+        // Form actions.
+        "dom_form" => {
+            let selector = selector_of(command)?;
+            let action = command.arg("form_action").ok_or("form_action is required (submit|reset|serialize)")?;
+            let script = match action {
+                "submit" => format!("document.querySelector({selector:?})?.submit()"),
+                "reset" => format!("document.querySelector({selector:?})?.reset()"),
+                "serialize" => format!(
+                    "(() => {{ const f = document.querySelector({selector:?}); if (!f) return null; const data = {{}}; for (const el of f.elements) if (el.name) data[el.name] = el.value; return JSON.stringify(data); }})()",
+                ),
+                _ => return Err(format!("dom_form action must be submit, reset, or serialize (got {action})")),
+            };
+            args.set("script", script);
+            "eval"
+        }
+        // Dispatch custom events.
+        "dom_dispatch" => {
+            let event_type = command.arg("event_type").ok_or("event_type is required")?;
+            let bubbles = command.arg("bubbles").unwrap_or("false");
+            let cancelable = command.arg("cancelable").unwrap_or("false");
+            args.set("script", format!(
+                "document.dispatchEvent(new Event({event_type:?}, {{bubbles: {bubbles}, cancelable: {cancelable}}}))",
+            ));
+            "eval"
+        }
+        // Wait for selector with timeout.
+        "dom_wait_for" => {
+            let selector = command.arg("wait_selector").or_else(|| command.arg("selector")).ok_or("selector is required")?;
+            let timeout = command.arg("wait_timeout_ms").unwrap_or("5000");
+            args.set("script", format!(
+                "new Promise((resolve, reject) => {{ const t0 = Date.now(); function check() {{ if (document.querySelector({selector:?})) resolve(true); else if (Date.now() - t0 > {timeout}) reject('timeout'); else setTimeout(check, 100); }} check(); }})",
+            ));
+            "eval"
+        }
+        // Scroll element into view.
+        "dom_scroll_into_view" => {
+            let selector = command.arg("scroll_selector").or_else(|| command.arg("selector")).ok_or("selector is required")?;
+            args.set("script", format!("document.querySelector({selector:?})?.scrollIntoView({{behavior: 'smooth'}})"));
+            "eval"
+        }
+        // Hover (dispatch mouseover/mouseenter).
+        "dom_hover" => {
+            let selector = command.arg("hover_selector").or_else(|| command.arg("selector")).ok_or("selector is required")?;
+            args.set("script", format!(
+                "(() => {{ const el = document.querySelector({selector:?}); if (!el) return; el.dispatchEvent(new MouseEvent('mouseover', {{bubbles: true}})); el.dispatchEvent(new MouseEvent('mouseenter', {{bubbles: true}})); }})()",
+            ));
+            "eval"
+        }
+        // Focus element.
+        "dom_focus" => {
+            let selector = command.arg("focus_selector").or_else(|| command.arg("selector")).ok_or("selector is required")?;
+            args.set("script", format!("document.querySelector({selector:?})?.focus()"));
+            "eval"
+        }
+        // Download a URL via fetch + blob.
+        "dom_download" => {
+            let url = command.arg("download_url").or_else(|| command.arg("url")).ok_or("url is required")?;
+            args.set("script", format!(
+                "fetch({url:?}).then(r => r.blob()).then(b => {{ const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = ''; a.click(); }})",
+            ));
+            "eval"
+        }
+        // Get computed styles.
+        "dom_get_styles" => {
+            let selector = selector_of(command)?;
+            args.set("script", format!(
+                "(() => {{ const el = document.querySelector({selector:?}); if (!el) return null; const cs = getComputedStyle(el); const out = {{}}; for (const p of cs) out[p] = cs.getPropertyValue(p); return JSON.stringify(out); }})()",
+            ));
+            "eval"
+        }
+        // Set inline style.
+        "dom_set_style" => {
+            let selector = selector_of(command)?;
+            let prop = command.arg("attr_name").ok_or("attr_name (CSS property) is required")?;
+            let val = command.arg("attr_value").unwrap_or("");
+            args.set("script", format!(
+                "document.querySelector({selector:?})?.style.setProperty({prop:?}, {val:?})",
+            ));
+            "eval"
+        }
+        // Mutation observer: install and collect mutations.
+        "dom_mutation_observer" => {
+            let selector = command.arg("selector").unwrap_or("body");
+            args.set("script", format!(
+                "(() => {{ if (window.__ahuraMutations) {{ window.__ahuraMutations.observer.disconnect(); }} const muts = []; const obs = new MutationObserver(ms => ms.forEach(m => muts.push({{type: m.type, target: m.target.tagName, added: m.addedNodes.length, removed: m.removedNodes.length}})))); obs.observe(document.querySelector({selector:?}) || document.body, {{childList: true, attributes: true, subtree: true}}); window.__ahuraMutations = {{observer: obs, mutations: muts}}; return 'observer installed'; }})()",
+            ));
+            "eval"
+        }
+        // Clear mutation observer and return collected mutations.
+        "dom_clear_mutation_observer" => {
+            args.set("script",
+                "(() => { if (!window.__ahuraMutations) return 'no observer'; window.__ahuraMutations.observer.disconnect(); const m = window.__ahuraMutations.mutations; delete window.__ahuraMutations; return JSON.stringify(m); })()".to_string());
+            "eval"
+        }
         // Captcha handling lives in the engine and runs during navigation, so
         // this command navigates (when a URL is given) and reports what the page
         // turned out to be. There is no solver to call.

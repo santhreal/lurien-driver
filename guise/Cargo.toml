@@ -1,6 +1,6 @@
 [package]
 name = "guise"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
@@ -22,9 +22,9 @@ http = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 futures = { workspace = true }
 guise-oracle = { workspace = true }
-guise-choice = { path = "../guise-choice", version = "0.1.4" }
-guise-pacing = { path = "../guise-pacing", version = "0.1.5", optional = true }
-guise-profiles = { path = "../guise-profiles", version = "0.1.6", optional = true }
+guise-choice = { path = "../guise-choice", version = "0.1.8" }
+guise-pacing = { path = "../guise-pacing", version = "0.1.8", optional = true }
+guise-profiles = { path = "../guise-profiles", version = "0.1.8", optional = true }
 thiserror = { workspace = true }
 toml = { version = "=0.8.23", optional = true }
 scanclient = { path = "../../../libs/scanner/scanclient", version = "0.2.1", default-features = false, optional = true }

@@ -48,7 +48,7 @@ Scanners keep `guise-*` crate names. They do not import `lurien` or `foxdriver`.
 | `src/challenge.rs` | engine handshake | Owns `LURIEN_CHALLENGE`: the catalog JSON, the evidence path, the budget, the claimed kinds, and the approach path sampled from guise. Reads evidence rows back; never solves anything itself. |
 
 `docs/VERBS.md` is generated from the registry. A stale copy fails
-`cargo test -p lurien-browser --test verb_registry`.
+`cargo test -p lurien-driver --test verb_registry`.
 
 Enforced by that suite, not by prose: unique verb tokens, a dotted
 `domain.verb` alias per verb, documented arguments, required arguments before
@@ -80,10 +80,10 @@ the directory.
 CI (`.github/workflows/ci.yml`):
 
 - `cargo test --workspace --all-targets`, plus the `lurien-browser` doc tests.
-- `cargo tree -p lurien-browser` pulls no scanner crate and no browser sidecar.
+- `cargo tree -p lurien-driver` pulls no scanner crate and no browser sidecar.
 - guise without default features does not pull the driver.
 - every vendor binding names a kind `_schema.toml` closes.
 
 The vendor-name grep over `engine/additions/challenge/` runs in the engine
-repository, which owns that directory. `cargo test -p lurien-browser --test
+repository, which owns that directory. `cargo test -p lurien-driver --test
 kinds_registry` also runs it whenever the engine tree is present.

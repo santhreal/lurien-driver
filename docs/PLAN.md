@@ -1,7 +1,8 @@
 # Lurien product spec
 
-One installable browser. The word is **lurien** everywhere a human or a registry sees it.
-GitHub / crates.io title: **lurien-browser**.
+One installable browser. The word is **lurien** everywhere a human types it.
+The browser itself is **lurien-browser**; the Rust crate that drives it is
+**lurien-driver**. The browser owns the browser name.
 
 There is no public or internal product named reynard after cutover.
 guise, foxdriver, guise-bridge, and captchaforge stop being products.
@@ -14,24 +15,31 @@ Do not create `santhreal/reynard`, do not ship `REYNARD_*`, do not leave `softwa
 
 | Item | State |
 |---|---|
-| `santhreal/lurien-browser` | created, `main` pushed, workspace root so a clone builds |
-| crates.io `lurien-browser` | `0.1.0`, installs from the registry, both bins run |
-| crates.io `guise` / `guise-oracle` | `0.1.7` / `0.1.4`, the versions `lurien-browser` needs |
+| `santhreal/lurien-driver` | the control tree: driver crate, persona crates, catalog, docs |
+| `santhreal/lurien-browser` | the Gecko fork, renamed off `reynard` |
+| crates.io `guise` family | unified at `0.1.8` |
 | crates.io `captchaforge` | 36 versions yanked; `0.2.41` stays as the retirement notice |
-| engine challenge subsystem | `engine/additions/challenge/`, packaged, proven by `lurien/tests/e2e_challenge.sh` |
+| challenge subsystem | `engine/additions/challenge/`, packaged, proven by `lurien/tests/e2e_challenge.sh` |
 | claimed kinds | `none`, `score`, `checkbox`, each with a dated scorecard row |
+
+`lurien-driver` is not published while the interactive kinds are still refused.
 
 ## 1. Name
 
 | Face | Token |
 |---|---|
 | Spoken / CLI / MCP | `lurien`, `lurien-mcp` |
-| GitHub | `santhreal/lurien-browser` |
-| crates.io | `lurien-browser` (`lurien` is a dead 2021 config-file crate, 0 stars, not a browser) |
+| The browser | `lurien-browser`, GitHub `santhreal/lurien-browser`, MPL, own repo |
+| The driver | `lurien-driver`, GitHub `santhreal/lurien-driver`, crates.io `lurien-driver` |
+| Installed browser binary | `lurien` |
+| crates.io `lurien` | a dead 2021 config-file crate, not us, not available |
+| crates.io `lurien-browser` | held for the crate that installs the browser, if that is ever built |
 | npm (later) | `@santhreal/lurien-mcp` |
-| Engine binary (installed) | `lurien` |
-| Engine env | `LURIEN_BIN`, `LURIEN_CONFIG` |
+| Browser env | `LURIEN_BIN`, `LURIEN_CONFIG`, `LURIEN_CHALLENGE` |
 | Persona crates | `guise`, `guise-profiles`, `guise-pacing`, `guise-choice`, `guise-oracle` |
+
+A crate that cannot paint a page is not the browser. `lurien-driver` requires an
+installed `lurien-browser` and says so when it is missing.
 
 Do not publish `santhreal/reynard`, `reynard.dev`, `reynard-mcp`, or a Playwright Python package.
 [minh-ton/reynard-browser](https://github.com/minh-ton/reynard-browser) is a 1.5k-star Gecko iOS browser.
@@ -71,7 +79,7 @@ software/browser/
   README.md
   install.sh
 
-  lurien/                         crate lurien-browser. The only public Rust face.
+  lurien/                         crate lurien-driver. The only public Rust face.
     Cargo.toml                    [[bin]] lurien, lurien-mcp
     src/
       lib.rs                      lurien::Browser
@@ -668,7 +676,7 @@ Today:
 
 | Workflow | What it does | After |
 |---|---|---|
-| `.github/workflows/guise-msrv.yml` | MSRV 1.88, `check`/`test -p guise --features browser,http`, guise-echo. Path filter `libs/runtime/guise/**` | Retarget paths to `software/browser/{guise,foxdriver,echo}`. Keep guise-echo. Add `-p lurien-browser` when that crate exists |
+| `.github/workflows/guise-msrv.yml` | MSRV 1.88, `check`/`test -p guise --features browser,http`, guise-echo. Path filter `libs/runtime/guise/**` | Retarget paths to `software/browser/{guise,foxdriver,echo}`. Keep guise-echo. Add `-p lurien-driver` when that crate exists |
 | `.github/workflows/guise-telemetry-free.yml` | `cargo tree` http-headers has no reqwest/scanclient/hickory/wreq; `local_echo_regression` | Keep. Path filters follow guise. This is the scanner-safe half |
 | `libs/runtime/guise/.github/workflows/ci.yml` | Delegates to `santh-project/santh-ci` | Move with the crate or delete if root CI covers it |
 | `software/reynard/.github/workflows/build.yml` | Camoufox **linux/windows/macos × x86_64/arm64/i686**, artifacts named `CamoufoxBuilds-*`, draft GH release, `CAMOUFOX_PASSWD` | v1 ships **linux x86_64 only**. New workflow `software/browser/.github/workflows/engine.yml`: linux x86_64, artifact `lurien-engine-linux-x86_64`. Do not publish Windows/macOS as lurien. Drop Camoufox artifact names |
@@ -754,7 +762,7 @@ Fonts: `bundle/fonts/` is still not shipped (proprietary). Linux matched-host do
 - Unreachable proxy does not fall back to direct.
 - MCP: Playwright tool names present; `challenge` absent.
 - Grep gate in CI: `\breynard\b` / `REYNARD_` empty in shipped trees except the alias table.
-- `cargo tree -p lurien-browser` does not pull scanclient / wafrift / ahura.
+- `cargo tree -p lurien-driver` does not pull scanclient / wafrift / ahura.
 
 ### 20.3 Skip vs fail
 
@@ -812,7 +820,7 @@ These ship in the same change as the move. A tree with no owners is unmaintainab
 | `docs/REBASE.md` | fork life | rebase onto next Firefox/Camoufox; which patches must apply; banner + config + observer register |
 | `docs/NOTICE` | license | MPL engine + MIT crate + Camoufox/Firefox |
 | crate `--help` + MCP description | skill | no `SKILL.md`. no `challenge` tool |
-| `lurien-browser` CHANGELOG | crate | first 0.1.0 |
+| `lurien-driver` CHANGELOG | crate | first 0.1.0 |
 | captchaforge deprecation CHANGELOG | yank | points at lurien; yank date |
 | wafrift README | consumer | delete Chromium / captchaforge sentences |
 
@@ -840,7 +848,7 @@ Do not write:
 - engine workflow publishes linux x86_64 lurien artifacts, not `CamoufoxBuilds-*`
 - `stack.sh` speaks lurien
 - no `pip install lurien`; Playwright uses `executablePath`
-- `cargo add lurien-browser` is the Rust face
+- `cargo add lurien-driver` is the Rust face
 - no helm, no captchaforge docker tag reuse
 - CHANGELOG + NOTICE + authors line present
 - `software/browser/README.md` plus `docs/{PLAN,TREE,KINDS,ENGINE,REBASE}.md` exist; TREE import law matches Cargo.toml

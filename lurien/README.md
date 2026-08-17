@@ -1,6 +1,7 @@
-# lurien-browser
+# lurien-driver
 
-Spoken / CLI / MCP: **lurien**. crates.io name: **lurien-browser**.
+The Rust face of **lurien-browser**. Spoken / CLI / MCP: **lurien**.
+crates.io name: **lurien-driver**.
 
 ```
 lurien::Browser::launch(profile)
