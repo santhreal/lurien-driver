@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>page with an adversarial challenge</title>
+<!--
+  The page half of the adversarial fixture.
+
+  Two jobs. It holds the widget's iframe, served from a second host so the widget
+  gets its own browsing context in its own process. And it tells the widget whether
+  the origin boundary between them is real: reading `contentDocument` must throw,
+  and the result of trying is posted into the widget, which refuses to write a
+  token unless the answer was that the page is blind.
+
+  The page also tries to solve the widget the way a page-script solver would, and
+  records that it could not: it cannot reach the checkbox, cannot dispatch into the
+  child, and cannot read the token. None of that reaches the widget as a claim; it
+  is the page failing in the open.
+-->
+<h1>Sign in</h1>
+<form>
+  <label>Email <input name="email" type="email" value="fixture@example.test"></label>
+  <iframe src="CHILD_URL" title="widget" width="320" height="70" style="border:1px solid #ccc"></iframe>
+  <button type="submit">Continue</button>
+</form>
+<div id="page-state">loading</div>
+<script>
+  const frame = document.querySelector("iframe");
+
+  // What a page-script solver would try first, and what it gets.
+  function reachIntoWidget() {
+    try {
+      const doc = frame.contentDocument || frame.contentWindow.document;
+      const box = doc && doc.getElementById("box");
+      if (box) {
+        box.click();
+        return true;
+      }
+      return Boolean(doc);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  window.fixtureParentCanSeeWidget = reachIntoWidget();
+
+  // Told once the widget exists to listen, and again on load, because the widget's
+  // listener and this frame's load event race and neither one waits for the other.
+  function reportIsolation() {
+    frame.contentWindow.postMessage(
+      { fixture: "isolation", isolated: reachIntoWidget() === false },
+      "*"
+    );
+  }
+
+  frame.addEventListener("load", () => {
+    reportIsolation();
+    document.getElementById("page-state").textContent =
+      window.fixtureParentCanSeeWidget ? "the page can read the widget" : "the page is blind";
+  });
+  const told = setInterval(reportIsolation, 100);
+  setTimeout(() => clearInterval(told), 5000);
+</script>

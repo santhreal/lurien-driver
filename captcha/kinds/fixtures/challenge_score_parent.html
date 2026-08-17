@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>page with a scoring challenge</title>
+<!--
+  The page half of the `score` fixture. It holds the widget's iframe, served from a
+  second host, and cannot read the token the widget writes: a scoring vendor's
+  answer lives in the widget's own context, which is why the observer has to attach
+  there rather than poll the page.
+-->
+<h1>Checkout</h1>
+<form>
+  <label>Card <input name="card" value="4242 4242 4242 4242"></label>
+  <iframe src="CHILD_URL" title="widget" width="320" height="70" style="border:1px solid #ccc"></iframe>
+  <button type="submit">Pay</button>
+</form>
+<script>
+  window.fixtureParentCanSeeWidget = (() => {
+    try {
+      const doc = document.querySelector("iframe").contentDocument;
+      return Boolean(doc && doc.querySelector('input[name="fixture-token"]'));
+    } catch (e) {
+      return false;
+    }
+  })();
+</script>

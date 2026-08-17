@@ -16,7 +16,10 @@ chrome-visible signals to a closed kind.
 | `pow` | nonce search in browser worker lanes → the `[work]` submit address | Token.wait |
 | `fail` | — | typed error |
 
-Unknown kind fails closed. A kind with no fixture is a red test.
+Unknown kind fails closed. A kind with no fixture is a red test: one classification
+fixture named after the kind, and, for a kind this build claims, a scorecard row
+naming a script in `lurien/tests/` that solves it end to end. A claim whose script
+is missing or renamed is red rather than quietly unproven.
 
 A kind whose answer is a string types it, and typing is timed. `Keys.sys.mjs` plans
 a gap per pair of keys and a hold per key from the deck the session shipped, so
@@ -51,7 +54,11 @@ Do not add a C++ file. A vendor identifier under `engine/additions/challenge/` i
 2. Implement the primitive once (`Input` / `Snapshot` / `HelperSock` / `Pow`).
 3. One fixture that fails until the kind is wired, and which refuses the shape a
    scripted solver produces rather than only checking the answer.
-4. A dated scorecard row before the build claims the kind, and a live-vendor row
-   before a document names a vendor for it.
+4. One `lurien/tests/e2e_<kind>.sh` that drives that fixture through `goto` and
+   reads the verdict out of the evidence file, with at least one phase that must be
+   refused. A claim proven only by a page somebody visited is not replayable and is
+   refused by `kinds_registry.rs`.
+5. A dated scorecard row before the build claims the kind, naming that script, and a
+   live-vendor row before a document names a vendor for it.
 
 The registry test enumerates `_schema.toml` at run time.

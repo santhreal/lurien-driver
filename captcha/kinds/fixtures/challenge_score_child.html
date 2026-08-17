@@ -1,0 +1,65 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>score widget</title>
+<!--
+  The widget half of the `score` fixture: the class of challenge nobody clicks.
+
+  A scoring vendor decides on evidence the session already produced and writes its
+  token on its own schedule. So this widget takes no input at all. It writes
+  `fixture-token` in its own field once `SCORE_MS` has passed since load, which is
+  the whole solve: the engine's job is to be a session worth passing and then to
+  observe the write, in this context, which the page cannot read.
+
+  It also refuses a session that touched it. A press or a key here means the page
+  was classified as something interactive and acted on, and a solver that clicks a
+  scoring widget is producing exactly the evidence that widget scores. A touched
+  widget writes nothing and says why, so the misclassification surfaces as a
+  refusal instead of a pass that happened to work.
+
+  `?delay=<ms>` moves the write, which is how a budget that expires before the
+  vendor answers is tested.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 12px; }
+  #widget { border: 1px solid #999; border-radius: 3px; padding: 6px 10px; display: inline-block; }
+</style>
+
+<div id="widget" role="group" aria-label="security check">Checking your browser</div>
+<input type="hidden" name="fixture-token" value="">
+<div id="state">watching</div>
+
+<script>
+  // Long enough that a driver cannot mistake an already-written token for its own
+  // work, short enough to sit inside a default kind budget.
+  const SCORE_MS = 1200;
+
+  const token = document.querySelector('input[name="fixture-token"]');
+  const state = document.getElementById("state");
+  const widget = document.getElementById("widget");
+  const delay = Number(new URLSearchParams(location.search).get("delay")) || SCORE_MS;
+
+  let touched = null;
+
+  for (const type of ["mousedown", "mouseup", "click", "keydown", "pointerdown"]) {
+    addEventListener(
+      type,
+      event => {
+        if (event.isTrusted && touched === null) {
+          touched = type;
+          token.value = "";
+          state.textContent = `refused: a scoring widget does not get a ${type}`;
+        }
+      },
+      true
+    );
+  }
+
+  setTimeout(() => {
+    if (touched !== null) {
+      return;
+    }
+    widget.textContent = "Verified";
+    token.value = `fixture-score-${Date.now()}`;
+    state.textContent = "scored";
+  }, delay);
+</script>

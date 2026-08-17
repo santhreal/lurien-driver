@@ -1,0 +1,163 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>adversarial widget</title>
+<!--
+  The widget half of the adversarial fixture: one page that holds every line a
+  scripted solver crosses, so a token from it is evidence about all of them at
+  once.
+
+  Four refusals, and each one is armed before the engine can act:
+
+  1. Untrusted input. The widget clicks itself at load, twice, once through
+     element.click() and once through dispatchEvent. Both must be ignored. If
+     either one clears the widget then the guard is broken rather than passed, so
+     the widget latches and never writes a token again: a fixture that cannot
+     refuse is not evidence, and it says so rather than passing.
+  2. Instant motion. A press needs six trusted moves before it and at least
+     120 ms between the first of them and the press. One teleport to the centre is
+     what a driver does and what a scoring vendor is paid to notice.
+  3. A token written by anything but this widget. The value is derived from a
+     nonce kept in a closure, and the field is watched: a value that is not the
+     one this code would produce is a forgery, and it latches the same way. That
+     is the check a solver hoping to write the token itself has to beat.
+  4. A parent that can read this document. The page half reports whether its
+     `contentDocument` access threw, and the widget refuses unless it did. An
+     origin boundary that turns out to be readable makes every other refusal here
+     meaningless, because page script could have done the whole solve.
+
+  `?forge=1` has a page script write a plausible token 200 ms after load, which is
+  the negative case for the third refusal.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 12px; }
+  #box {
+    width: 22px; height: 22px; border: 2px solid #666; border-radius: 3px;
+    display: inline-block; vertical-align: middle; cursor: pointer;
+  }
+  #box[aria-checked="true"] { background: #2b7; border-color: #2b7; }
+</style>
+
+<div id="box" role="checkbox" aria-checked="false" tabindex="0"></div>
+<span id="label">Verify you are human</span>
+<input type="hidden" name="fixture-token" value="">
+<div id="state">untouched</div>
+
+<script>
+  // Motion the widget insists on seeing before a press. Both numbers are what a
+  // hand produces without trying and what a driver has to be told to produce.
+  const MIN_MOVES = 6;
+  const MIN_APPROACH_MS = 120;
+
+  const box = document.getElementById("box");
+  const token = document.querySelector('input[name="fixture-token"]');
+  const state = document.getElementById("state");
+
+  // The value this widget, and only this widget, would write. Kept in a closure:
+  // nothing outside can read it, so nothing outside can forge it either.
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  let broken = null;
+  let isolated = null;
+  let downTrusted = false;
+  let moves = 0;
+  let firstMoveAt = null;
+
+  function refuse(reason) {
+    state.textContent = `refused: ${reason}`;
+  }
+
+  function latch(reason) {
+    broken = reason;
+    token.value = "";
+    refuse(reason);
+  }
+
+  addEventListener("message", event => {
+    const data = event.data;
+    if (!data || data.fixture !== "isolation") {
+      return;
+    }
+    isolated = data.isolated === true;
+    if (!isolated) {
+      latch("the page can read this document, so page script could have solved it");
+    }
+  });
+
+  addEventListener("mousemove", event => {
+    if (!event.isTrusted) {
+      return;
+    }
+    moves += 1;
+    if (firstMoveAt === null) {
+      firstMoveAt = event.timeStamp;
+    }
+  });
+
+  box.addEventListener("mousedown", event => {
+    downTrusted = event.isTrusted;
+  });
+
+  box.addEventListener("click", event => {
+    if (broken) {
+      refuse(broken);
+      return;
+    }
+    if (!event.isTrusted || !downTrusted) {
+      refuse("the click was not trusted");
+      return;
+    }
+    if (isolated !== true) {
+      refuse("the page never reported whether it can read this document");
+      return;
+    }
+    if (moves < MIN_MOVES) {
+      refuse(`${moves} moves is not an approach`);
+      return;
+    }
+    const approach = event.timeStamp - firstMoveAt;
+    if (!(approach >= MIN_APPROACH_MS)) {
+      refuse(`the pointer arrived ${Math.round(approach)}ms before the press`);
+      return;
+    }
+    box.setAttribute("aria-checked", "true");
+    token.value = `fixture-${nonce}`;
+    state.textContent = "solved";
+  });
+
+  // A field this widget did not write is a forgery, whoever wrote it. Watched
+  // rather than checked once, because the write can land at any moment, and
+  // watched twice: an attribute write is observable, a property write is not, and
+  // a solver reaching for one of them would otherwise pick the quiet one.
+  function checkForgery() {
+    if (broken || !token.value) {
+      return;
+    }
+    if (token.value !== `fixture-${nonce}`) {
+      latch("the token was written by something other than this widget");
+    }
+  }
+  new MutationObserver(checkForgery).observe(token, {
+    attributes: true,
+    attributeFilter: ["value"],
+  });
+  setInterval(checkForgery, 50);
+
+  // Self-test, before anything else can act: neither of these may clear the
+  // widget, and a widget they do clear is broken rather than solved.
+  box.click();
+  box.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  if (token.value) {
+    latch("an untrusted click cleared this widget");
+  } else {
+    state.textContent = "armed";
+  }
+
+  if (new URLSearchParams(location.search).get("forge") === "1") {
+    setTimeout(() => {
+      token.setAttribute("value", "fixture-deadbeefdeadbeef");
+      token.value = "fixture-deadbeefdeadbeef";
+    }, 200);
+  }
+</script>

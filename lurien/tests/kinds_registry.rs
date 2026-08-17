@@ -225,6 +225,51 @@ fn every_claimed_kind_has_a_dated_scorecard_row() {
     }
 }
 
+/// A claim is only worth what someone can run again.
+///
+/// Every claimed kind's row must name a script in `lurien/tests/`, and that script
+/// must exist. A `live vendor` row is exempt: its proof is a deployment, which is
+/// not in the tree and cannot be replayed here. So a kind whose only proof was a
+/// page somebody visited once must gain a fixture row before it may be claimed, and
+/// a script renamed out from under a row turns this red instead of leaving the
+/// claim pointing at nothing.
+#[test]
+fn every_claimed_kind_names_a_proof_that_can_be_run_again() {
+    let scorecard = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../docs/bench-results/challenge-scorecard.md");
+    let raw = fs::read_to_string(&scorecard).expect("challenge-scorecard.md");
+    let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let mut fixtures = 0;
+    for row in raw.lines().filter(|l| l.starts_with("| `")) {
+        let cells: Vec<&str> = row.split('|').map(str::trim).collect();
+        let kind = cells.get(1).copied().unwrap_or_default().trim_matches('`');
+        if !lurien::challenge::CLAIMED_KINDS.contains(&kind) {
+            continue;
+        }
+        let class = cells.get(2).copied().unwrap_or_default();
+        if class != "fixture" {
+            continue;
+        }
+        fixtures += 1;
+        let evidence = cells.get(7).copied().unwrap_or_default();
+        let script = evidence
+            .split_whitespace()
+            .map(|word| word.trim_matches(|c: char| !c.is_ascii_graphic() || "`;,".contains(c)))
+            .find(|word| word.ends_with(".sh"))
+            .unwrap_or_else(|| panic!("the {kind} row names no script to rerun: {row}"));
+        let name = script.rsplit('/').next().unwrap_or(script);
+        assert!(
+            tests.join(name).is_file(),
+            "the {kind} row names {script}, which is not a file in {}",
+            tests.display()
+        );
+    }
+    assert!(
+        fixtures >= 4,
+        "only {fixtures} claimed kinds are proven by a script in this tree"
+    );
+}
+
 /// The browser version `engine/upstream.sh` pins, as the scorecard writes it.
 ///
 /// Vacuous where the engine is not checked out beside the driver, exactly as the
@@ -267,14 +312,14 @@ fn every_claim_names_the_build_that_proved_it() {
     let raw = fs::read_to_string(&scorecard).expect("challenge-scorecard.md");
     let engine = pinned_engine();
     let driver = lurien::version::crate_version();
-    let mut checked = 0;
+    let mut carried = std::collections::BTreeSet::new();
     for row in raw.lines().filter(|l| l.starts_with("| `")) {
         let cells: Vec<&str> = row.split('|').map(str::trim).collect();
         let kind = cells.get(1).copied().unwrap_or_default().trim_matches('`');
         if !lurien::challenge::CLAIMED_KINDS.contains(&kind) {
             continue;
         }
-        checked += 1;
+        carried.insert(kind.to_string());
         let named_engine = cells.get(4).copied().unwrap_or_default();
         let named_driver = cells.get(5).copied().unwrap_or_default();
         if let Some(pinned) = engine.as_deref() {
@@ -291,11 +336,14 @@ fn every_claim_names_the_build_that_proved_it() {
              re-run its proof and rewrite the row"
         );
     }
-    assert_eq!(
-        checked,
-        lurien::challenge::CLAIMED_KINDS.len(),
-        "a claimed kind has no scorecard row to carry a build"
-    );
+    // A kind may carry two rows, a fixture and a live vendor, because they prove
+    // different things. What may not happen is a claimed kind carrying none.
+    for kind in lurien::challenge::CLAIMED_KINDS {
+        assert!(
+            carried.contains(*kind),
+            "kind {kind} is claimed with no scorecard row to carry a build"
+        );
+    }
 }
 
 /// Every closed kind is either claimed with a row, or listed as not claimed. A

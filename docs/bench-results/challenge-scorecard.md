@@ -21,7 +21,9 @@ and the row rewritten. A proof belongs to a build, not to a feature.
 
 | Kind | Class | Date | Engine | Driver | Result | Evidence |
 |---|---|---|---|---|---|---|
+| `none` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | reported as `none`, no evidence row, nothing acted on | `lurien/tests/e2e_adversarial.sh` phase two serves a page with no widget under a catalog that matches nothing and requires `{"kind":"none"}`, exit zero, and no verdict row |
 | `none` | live vendor | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | document usable, no widget seen | `lurien --headless goto https://example.com/` reports `{"kind":"none"}` |
+| `score` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | observed in 6994 ms across 2 contexts, `via: field`, widget never touched; a 4000 ms budget refused a vendor that answered later | `lurien/tests/e2e_score.sh`; the widget writes its token on its own schedule in its own context and refuses outright if a trusted press or key reaches it, which is what a misclassified scoring page would produce |
 | `score` | live vendor | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | vendor wrote its token, no interaction | managed deployment at `demo.turnstile.workers.dev` reports `{"kind":"score"}`; the observer folded to `none` because the token was already written |
 | `checkbox` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | solved in 7088 ms across 2 contexts, `via: field`; most of that is the visit the vendor is owed before the click | `lurien/tests/e2e_challenge.sh`; the widget refuses an untrusted click and a click with fewer than three trusted pointer moves |
 | `pow` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 4 hex zeros cleared in 143 hashes across 7 lanes, typed and accepted, whole page 9689 ms, `via: field` | `lurien/tests/e2e_pow.sh`; the page mints a fresh challenge and a random difficulty per load and accepts only a digest it verified itself, typed key by key with trusted events. `lurien/tests/pow_sha256.mjs` pins the worker digest against a reference implementation |
@@ -229,3 +231,28 @@ The interval distribution itself is a driver claim, not a page claim: four to si
 keystrokes is too small a sample to hold a distribution to, so the page gates
 structurally and `lurien/src/challenge.rs` asserts the deck's own dispersion, the
 ordering of its gap classes, and that its frequent-pair table is the model's.
+
+The `adversarial` fixture is one page holding every line a scripted solver crosses,
+so a token from it is evidence about all of them at once. Each refusal is armed
+before the engine can act, and three of them latch: a widget that can be fooled
+writes nothing at all afterwards, because a fixture that cannot refuse is not
+evidence.
+
+- The widget clicks itself twice at load, through `element.click()` and through
+  `dispatchEvent`. Either one clearing it is a broken guard, not a pass, and the
+  widget latches and never writes a token.
+- A press needs six trusted moves before it and 120 ms between the first move and
+  the press.
+- The token value is derived from a nonce kept in a closure, and the field is
+  watched by a `MutationObserver` and by an interval, because an attribute write is
+  observable and a property write is not. A value the widget would not have written
+  is a forgery and latches.
+- The page half reports whether its `contentDocument` access threw, and the widget
+  refuses unless it did. An origin boundary that turns out to be readable makes
+  every other refusal here meaningless.
+- Measured on 2026-08-17 against engine 150.0.2-beta.25 and driver 0.1.0: solved in
+  8640 ms across 2 contexts with 13 moves in the visit. A page with no widget was
+  reported as `none` with no evidence row. The same widget with a page script
+  writing a plausible token 200 ms after load was refused. One exact `trajectory` of
+  a single point, a teleport to the centre with an empty visit, was refused with
+  zero moves recorded.

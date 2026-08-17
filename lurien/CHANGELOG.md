@@ -95,6 +95,16 @@
   allows a hardcoded five seconds for `session.new`, so a loaded host reported a
   healthy browser as a failed launch. `session.status` needs no session and is now the
   readiness question, bounded at 60s with the address named in the failure.
+- Every claimed kind is proven by a script in the tree, not by a page somebody once
+  visited. `none` and `score` gain fixtures, and `kinds_registry.rs` refuses a
+  claimed kind whose scorecard row names no runnable script or names one that is not
+  there. The `score` fixture writes its token on its own schedule in its own context
+  and refuses outright if a trusted press reaches it, which is what a page
+  misclassified as interactive would produce.
+- One adversarial fixture holds every line a scripted solver crosses: an untrusted
+  click, a press with no approach, a token written by anything but the widget, and a
+  page that can read the widget. Three of the four latch, so a widget that can be
+  fooled writes nothing afterwards rather than passing once.
 - The `pow` kind is solved in the browser with no helper process. The binding's
   `[work]` table says where the challenge and difficulty live and where the answer
   goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by
