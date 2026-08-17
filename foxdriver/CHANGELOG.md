@@ -5,6 +5,17 @@
 
 - `launch_firefox_self_managed` waits for the remote agent to answer `session.status`, not merely for its debugging port to accept a connection. Gecko binds that socket seconds before the agent answers, and rustenium allows a hardcoded five seconds for `session.new` and panics past it, so a loaded host turned a browser that was starting normally into a launch failure. The wait is bounded at 60s and the failure names the address it asked. New `ready` module: a minimal WebSocket client for that one question, so this crate gains no WebSocket dependency.
 
+### Changed
+
+- Every public item is documented and `missing_docs` is now a deny. 127 items had
+  accumulated behind the warning, most of them the captured network types, whose
+  fields carry claims a caller cannot see from the name: a request body BiDi never
+  delivers, a timing phase that is `None` on a plaintext connection, a base64 header
+  value kept in that form, and counters that say whether a short log was a quiet page
+  or a hit cap.
+- `wait_until_ready` no longer initializes its last-failure string with a value it
+  always overwrites.
+
 ## [0.1.5] - 2026-08-07
 ### Fixed
 

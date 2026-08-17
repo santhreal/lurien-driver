@@ -52,7 +52,11 @@
 //! MIT OR Apache-2.0
 
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
+// A published crate whose public item has no documentation is a crate a caller
+// reads the source of. This is a deny rather than a warn because the surface only
+// went undocumented once: 127 items had accumulated behind a warning nobody could
+// see in a build that printed 128 of them.
+#![deny(missing_docs)]
 #![warn(clippy::pedantic)]
 #![cfg_attr(
     not(test),

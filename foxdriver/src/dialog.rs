@@ -125,6 +125,7 @@ fn handler_str(h: &UserPromptHandlerType) -> &'static str {
 }
 
 impl DialogLog {
+    /// An empty log. Capture begins when it is installed on a session.
     pub fn new() -> Self {
         Self::default()
     }

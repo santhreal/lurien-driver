@@ -601,6 +601,14 @@ pub async fn verify_any_token_in_frames(page: &Page) -> Result<bool> {
     Ok(results.into_iter().any(|v| v))
 }
 
+/// Is a token field of this name filled in, in any frame of the page?
+///
+/// Use [`harvest_token_in_frames`] when the value itself is wanted; this only
+/// answers whether one exists.
+///
+/// # Errors
+///
+/// Returns an error when a frame cannot be evaluated in.
 pub async fn verify_token_in_frames(page: &Page, token_input_name: &str) -> Result<bool> {
     Ok(harvest_token_in_frames(page, token_input_name)
         .await?

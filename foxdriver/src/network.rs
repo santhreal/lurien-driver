@@ -21,9 +21,13 @@ use tokio::sync::{broadcast, RwLock};
 // Data types
 // ------------------------------------------------------------------
 
+/// One header as the browser reported it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CapturedHeader {
+    /// Header name, in the case the browser sent it.
     pub name: String,
+    /// Header value. A value the wire carried as base64 is kept in that form,
+    /// not decoded.
     pub value: String,
 }
 
@@ -44,14 +48,24 @@ impl From<&rustenium_bidi_definitions::network::types::Header> for CapturedHeade
     }
 }
 
+/// Fetch phase offsets for one request, in milliseconds from the moment the
+/// request started. A phase the browser did not perform, such as TLS on a
+/// plaintext connection, is `None`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CapturedTiming {
+    /// Name resolution began.
     pub dns_start_ms: Option<f64>,
+    /// Name resolution finished.
     pub dns_end_ms: Option<f64>,
+    /// The transport connection was opened.
     pub connect_start_ms: Option<f64>,
+    /// The transport connection was established.
     pub connect_end_ms: Option<f64>,
+    /// The TLS handshake began. `None` on a plaintext connection.
     pub tls_start_ms: Option<f64>,
+    /// The first response byte arrived.
     pub response_start_ms: Option<f64>,
+    /// The last response byte arrived.
     pub response_end_ms: Option<f64>,
 }
 
@@ -78,15 +92,25 @@ fn non_neg(v: f64) -> Option<f64> {
     }
 }
 
+/// A cookie the browser sent with a request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CapturedCookie {
+    /// Cookie name.
     pub name: String,
+    /// Cookie value. A value the wire carried as base64 is kept in that form.
     pub value: String,
+    /// Domain the cookie was sent to, in the form the browser reported.
     pub domain: String,
+    /// Path the cookie was sent for.
     pub path: String,
+    /// Size in bytes the browser attributes to this cookie.
     pub size: u64,
+    /// The cookie is unreadable from script.
     pub http_only: bool,
+    /// The cookie is sent only over TLS.
     pub secure: bool,
+    /// `SameSite` attribute, lowercased: `strict`, `lax`, `none`, or the
+    /// browser's own name for an unset one.
     pub same_site: String,
 }
 
@@ -113,18 +137,34 @@ impl From<&rustenium_bidi_definitions::network::types::Cookie> for CapturedCooki
     }
 }
 
+/// A request the browser was about to send.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CapturedRequest {
+    /// Request id, which the browser reuses in this request's response and error
+    /// events. Entries are keyed by it.
     pub id: String,
+    /// Browsing context the request came from, when the browser named one.
     pub context: Option<String>,
+    /// HTTP method, as the browser reported it.
     pub method: String,
+    /// URL requested. A redirect produces a further request with its own id.
     pub url: String,
+    /// Request headers, in the browser's order.
     pub headers: Vec<CapturedHeader>,
+    /// Request body. Always `None` today: BiDi's `network.beforeRequestSent`
+    /// does not carry one, so a body is only present if a caller filled it in.
     pub post_data: Option<String>,
+    /// Browser timestamp of the request, in milliseconds since the epoch.
     pub timestamp: u64,
+    /// Fetch destination the browser named: `document`, `script`, `image` and
+    /// the rest; empty when it named none.
     pub destination: String,
+    /// What started the request (`parser`, `script`, `preload`, ...), when the
+    /// browser said.
     pub initiator_type: Option<String>,
+    /// Phase offsets for this request.
     pub timing: CapturedTiming,
+    /// Cookies sent with this request.
     pub cookies: Vec<CapturedCookie>,
 }
 
@@ -167,43 +207,67 @@ impl CapturedRequest {
 /// content must fetch it through another mechanism.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CapturedResponse {
+    /// Request id this response answers.
     pub id: String,
+    /// URL the response came from, which a redirect makes differ from the
+    /// request's own URL.
     pub url: String,
+    /// Protocol the browser used: `http/1.1`, `h2`, `h3`.
     pub protocol: String,
+    /// HTTP status code.
     pub status: u16,
+    /// Reason phrase, when the protocol carries one.
     pub status_text: String,
+    /// Response headers, in the browser's order.
     pub headers: Vec<CapturedHeader>,
+    /// MIME type the browser resolved for the body.
     pub mime_type: String,
     /// Response body size, as reported by the browser.
     ///
     /// This is metadata only; the response body bytes are not captured.
     pub body_size: Option<u64>,
+    /// The browser served this from its cache rather than the network.
     pub from_cache: bool,
 }
 
+/// A fetch that ended without a response.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CapturedError {
+    /// Request id that failed.
     pub id: String,
+    /// URL that was being fetched.
     pub url: String,
+    /// The browser's own description of the failure.
     pub error_text: String,
 }
 
+/// One request and whichever of its outcomes has arrived. Both `response` and
+/// `error` are `None` while the request is still in flight, and a request that
+/// never completes keeps that shape for the life of the log.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetworkEntry {
+    /// The request as it was sent.
     pub request: CapturedRequest,
+    /// The response, once one completed.
     pub response: Option<CapturedResponse>,
+    /// The failure, when the fetch produced one instead.
     pub error: Option<CapturedError>,
 }
 
 impl NetworkEntry {
+    /// A response has arrived for this request.
     pub fn has_response(&self) -> bool {
         self.response.is_some()
     }
 
+    /// The fetch failed instead of completing.
     pub fn is_error(&self) -> bool {
         self.error.is_some()
     }
 
+    /// The URL the response came from, or the requested one while none has
+    /// arrived. This is the URL after redirects, which is what a caller matching
+    /// on an endpoint wants.
     pub fn final_url(&self) -> &str {
         self.response
             .as_ref()
@@ -211,10 +275,12 @@ impl NetworkEntry {
             .unwrap_or(&self.request.url)
     }
 
+    /// Status code, or `None` while no response has arrived.
     pub fn status(&self) -> Option<u16> {
         self.response.as_ref().map(|r| r.status)
     }
 
+    /// Response header by name, case-insensitively.
     pub fn response_header(&self, name: &str) -> Option<&str> {
         let name_lower = name.to_lowercase();
         self.response.as_ref().and_then(|r| {
@@ -225,6 +291,7 @@ impl NetworkEntry {
         })
     }
 
+    /// Request header by name, case-insensitively.
     pub fn request_header(&self, name: &str) -> Option<&str> {
         self.request.request_header(name)
     }
@@ -266,6 +333,11 @@ impl NetworkEntry {
 // Filter
 // ------------------------------------------------------------------
 
+/// A conjunction of conditions over captured entries.
+///
+/// Every condition that is set must hold; a condition left unset matches
+/// everything. Built by chaining, so an unmatched filter is an empty result
+/// rather than an error.
 #[derive(Debug, Clone, Default)]
 pub struct Filter {
     method: Option<String>,
@@ -280,61 +352,79 @@ pub struct Filter {
 }
 
 impl Filter {
+    /// A filter that matches every entry.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Require this HTTP method, compared case-insensitively.
     pub fn method(mut self, m: impl Into<String>) -> Self {
         self.method = Some(m.into().to_uppercase());
         self
     }
 
+    /// Require a response whose status falls in this inclusive range. An entry
+    /// with no response yet never matches.
     pub fn status_range(mut self, r: std::ops::RangeInclusive<u16>) -> Self {
         self.status_range = Some(r);
         self
     }
 
+    /// Require this substring in the URL, compared case-insensitively.
     pub fn url_contains(mut self, needle: impl Into<String>) -> Self {
         self.url_substring = Some(needle.into().to_lowercase());
         self
     }
 
+    /// Require the URL to match this pattern.
+    ///
+    /// # Errors
+    ///
+    /// Returns the regex crate's error when `pattern` does not compile.
     pub fn url_regex(mut self, pattern: &str) -> Result<Self> {
         self.url_regex = Some(regex::Regex::new(pattern)?);
         Ok(self)
     }
 
+    /// Require a header with this name whose value contains this substring, both
+    /// compared case-insensitively.
     pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.header_name = Some(name.into().to_lowercase());
         self.header_value_substring = Some(value.into().to_lowercase());
         self
     }
 
+    /// Require a header with this name, whatever its value.
     pub fn header_name(mut self, name: impl Into<String>) -> Self {
         self.header_name = Some(name.into().to_lowercase());
         self
     }
 
+    /// Require some header whose value contains this substring.
     pub fn header_value(mut self, value: impl Into<String>) -> Self {
         self.header_value_substring = Some(value.into().to_lowercase());
         self
     }
 
+    /// Require this fetch destination, compared case-insensitively.
     pub fn destination(mut self, d: impl Into<String>) -> Self {
         self.destination = Some(d.into().to_lowercase());
         self
     }
 
+    /// Require a completed response.
     pub fn with_response(mut self) -> Self {
         self.has_response = Some(true);
         self
     }
 
+    /// Require that no response has arrived: the requests still in flight.
     pub fn without_response(mut self) -> Self {
         self.has_response = Some(false);
         self
     }
 
+    /// Require a fetch error.
     pub fn with_error(mut self) -> Self {
         self.has_error = Some(true);
         self
@@ -437,17 +527,32 @@ impl Filter {
 // Metrics
 // ------------------------------------------------------------------
 
+/// What the capture did with the events it received, including what it threw
+/// away. A caller reading a log that looks short reads this to learn whether
+/// it is short because the page was quiet or because the caps were hit.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkMetrics {
+    /// `network.beforeRequestSent` events ingested.
     pub requests_received: u64,
+    /// `network.responseCompleted` events ingested.
     pub responses_received: u64,
+    /// `network.fetchError` events ingested.
     pub errors_received: u64,
+    /// Oldest entries dropped to stay under `max_entries`.
     pub entries_evicted: u64,
+    /// Responses discarded because they arrived with no request and the pending
+    /// table was full.
     pub pending_responses_dropped: u64,
+    /// Errors discarded for the same reason.
     pub pending_errors_dropped: u64,
+    /// Entries no subscriber was listening for.
     pub broadcast_drops: u64,
+    /// Responses for a request that already had one.
     pub duplicate_responses: u64,
+    /// Errors for a request that already had one.
     pub duplicate_errors: u64,
+    /// The entry cap this log was built with, so a reader of these counters can
+    /// see what they were measured against.
     pub max_entries: usize,
 }
 
@@ -536,16 +641,21 @@ impl Inner {
 // NetworkLog
 // ------------------------------------------------------------------
 
+/// One session's captured traffic. Cloning shares the same log, so a handler
+/// and a caller reading it hold the same entries.
 #[derive(Debug, Clone)]
 pub struct NetworkLog {
     inner: Arc<RwLock<Inner>>,
 }
 
 impl NetworkLog {
+    /// A log holding 50 000 entries and 10 000 unmatched responses or errors.
     pub fn new() -> Self {
         Self::with_limits(50_000, 10_000)
     }
 
+    /// A log with explicit caps. Zero means no cap, which lets a long session
+    /// grow without bound.
     pub fn with_limits(max_entries: usize, max_pending: usize) -> Self {
         let (tx, _) = broadcast::channel(1024);
         Self {
@@ -553,15 +663,19 @@ impl NetworkLog {
         }
     }
 
+    /// Receive entries as they complete. A subscriber that falls behind loses the
+    /// entries it missed, counted in `broadcast_drops`.
     pub async fn subscribe(&self) -> broadcast::Receiver<Arc<NetworkEntry>> {
         self.inner.read().await.tx.subscribe()
     }
 
+    /// Every entry, oldest first, in flight ones included.
     pub async fn entries(&self) -> Vec<Arc<NetworkEntry>> {
         let inner = self.inner.read().await;
         inner.entries.clone()
     }
 
+    /// Entries that reached a response or an error.
     pub async fn completed(&self) -> Vec<Arc<NetworkEntry>> {
         let inner = self.inner.read().await;
         inner
@@ -572,11 +686,13 @@ impl NetworkLog {
             .collect()
     }
 
+    /// How many entries the filter matches.
     pub async fn count(&self, filter: Filter) -> usize {
         let inner = self.inner.read().await;
         inner.entries.iter().filter(|e| filter.matches(e)).count()
     }
 
+    /// Entries the filter matches, oldest first.
     pub async fn filter(&self, f: Filter) -> Vec<Arc<NetworkEntry>> {
         let inner = self.inner.read().await;
         inner
@@ -587,21 +703,25 @@ impl NetworkLog {
             .collect()
     }
 
+    /// The oldest entry.
     pub async fn first(&self) -> Option<Arc<NetworkEntry>> {
         let inner = self.inner.read().await;
         inner.entries.first().cloned()
     }
 
+    /// The newest entry.
     pub async fn last(&self) -> Option<Arc<NetworkEntry>> {
         let inner = self.inner.read().await;
         inner.entries.last().cloned()
     }
 
+    /// The entry at `n`, counting from the oldest.
     pub async fn nth(&self, n: usize) -> Option<Arc<NetworkEntry>> {
         let inner = self.inner.read().await;
         inner.entries.get(n).cloned()
     }
 
+    /// The oldest entry whose requested URL contains `substring`.
     pub async fn find_by_url(&self, substring: &str) -> Option<Arc<NetworkEntry>> {
         let inner = self.inner.read().await;
         inner
@@ -611,6 +731,7 @@ impl NetworkLog {
             .cloned()
     }
 
+    /// The oldest entry whose requested URL matches `re`.
     pub async fn find_by_url_regex(&self, re: &regex::Regex) -> Option<Arc<NetworkEntry>> {
         let inner = self.inner.read().await;
         inner
@@ -620,6 +741,7 @@ impl NetworkLog {
             .cloned()
     }
 
+    /// Every distinct requested URL, in the order first seen.
     pub async fn endpoints(&self) -> Vec<String> {
         let inner = self.inner.read().await;
         let mut seen = std::collections::HashSet::new();
@@ -631,6 +753,8 @@ impl NetworkLog {
             .collect()
     }
 
+    /// Every distinct host requested, in the order first seen. A URL that does
+    /// not parse is skipped.
     pub async fn hostnames(&self) -> Vec<String> {
         let inner = self.inner.read().await;
         let mut seen = std::collections::HashSet::new();
@@ -646,6 +770,7 @@ impl NetworkLog {
             .collect()
     }
 
+    /// Every method seen, sorted.
     pub async fn distinct_methods(&self) -> Vec<String> {
         let inner = self.inner.read().await;
         let mut seen = std::collections::HashSet::new();
@@ -662,6 +787,7 @@ impl NetworkLog {
         out
     }
 
+    /// Every status seen, sorted. Requests with no response contribute nothing.
     pub async fn distinct_statuses(&self) -> Vec<u16> {
         let inner = self.inner.read().await;
         let mut seen = std::collections::HashSet::new();
@@ -677,6 +803,7 @@ impl NetworkLog {
         out
     }
 
+    /// Sum of the response body sizes the browser reported.
     pub async fn total_bytes_in(&self) -> u64 {
         let inner = self.inner.read().await;
         inner
@@ -686,6 +813,8 @@ impl NetworkLog {
             .sum()
     }
 
+    /// Sum of the captured request body sizes. BiDi does not deliver request
+    /// bodies, so this is zero unless a caller supplied them.
     pub async fn total_bytes_out(&self) -> u64 {
         let inner = self.inner.read().await;
         inner
@@ -701,28 +830,35 @@ impl NetworkLog {
             .sum()
     }
 
+    /// How many entries the log holds.
     pub async fn len(&self) -> usize {
         self.inner.read().await.entries.len()
     }
 
+    /// The log holds no entries.
     pub async fn is_empty(&self) -> bool {
         self.len().await == 0
     }
 
+    /// Drop every entry. The metrics are kept, so what was already counted stays
+    /// counted.
     pub async fn clear(&self) {
         let mut inner = self.inner.write().await;
         inner.entries.clear();
         inner.by_id.clear();
     }
 
+    /// A snapshot of the counters.
     pub async fn metrics(&self) -> NetworkMetrics {
         self.inner.read().await.metrics.clone()
     }
 
+    /// The log holds an entry with this request id.
     pub async fn contains_id(&self, id: &str) -> bool {
         self.inner.read().await.by_id.contains_key(id)
     }
 
+    /// Remove the entry with this request id and return it.
     pub async fn remove_by_id(&self, id: &str) -> Option<Arc<NetworkEntry>> {
         let mut inner = self.inner.write().await;
         let idx = inner.by_id.remove(id)?;
@@ -966,6 +1102,12 @@ impl NetworkLog {
     // Export
     // ------------------------------------------------------------------
 
+    /// Write every entry to `path` as a JSON array.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the entries cannot be serialized or the file cannot
+    /// be written.
     pub async fn save_to_json(&self, path: &std::path::Path) -> Result<()> {
         let entries: Vec<NetworkEntry> =
             self.entries().await.iter().map(|e| (**e).clone()).collect();
@@ -1254,6 +1396,10 @@ fn build_response(evt: &ResponseCompleted) -> CapturedResponse {
 // Handler factory (used by browser.rs)
 // ------------------------------------------------------------------
 
+/// An event handler that feeds `log`.
+///
+/// `browser.rs` installs one per session. Events of other BiDi modules, and
+/// network events this capture does not model, are ignored.
 pub fn make_network_handler(
     log: NetworkLog,
 ) -> impl FnMut(

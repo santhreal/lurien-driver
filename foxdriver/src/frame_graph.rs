@@ -76,6 +76,7 @@ pub struct FrameNode {
 /// 1000+-frame pages (which don't exist in practice).
 #[derive(Debug, Clone, Default)]
 pub struct FrameGraph {
+    /// Every frame of the page, parents before children.
     pub nodes: Vec<FrameNode>,
 }
 

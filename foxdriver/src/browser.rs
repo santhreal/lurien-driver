@@ -243,6 +243,7 @@ pub struct EvaluationResult {
 }
 
 impl EvaluationResult {
+    /// Wrap a BiDi remote value so it can be deserialized.
     pub fn new(inner: RemoteValue) -> Self {
         Self { inner }
     }
@@ -430,7 +431,9 @@ type FoxNode =
 /// Direction for realistic scroll simulation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollDirection {
+    /// Toward the top of the document.
     Up,
+    /// Toward the bottom of the document.
     Down,
 }
 
@@ -1749,10 +1752,16 @@ pub enum ProxyScheme {
 /// warning rather than silently dropping them.
 #[derive(Debug, Clone, Default)]
 pub struct ProxyConfig {
+    /// Proxy protocol.
     pub scheme: ProxyScheme,
+    /// Proxy host, without a scheme or a port.
     pub host: String,
+    /// Proxy port.
     pub port: u16,
+    /// Username for an authenticated upstream. Firefox cannot carry this in prefs,
+    /// so it needs a local unauthenticated relay in front.
     pub username: Option<String>,
+    /// Password for an authenticated upstream, with the same limitation.
     pub password: Option<String>,
 }
 
@@ -1881,8 +1890,12 @@ pub fn proxy_prefs(proxy: &ProxyConfig) -> String {
     lines.join("\n")
 }
 
+/// How a Firefox is launched. Every field has a default, so
+/// `FoxBrowserConfig::default()` launches a headless browser on a fresh
+/// temporary profile.
 #[derive(Debug, Clone, Default)]
 pub struct FoxBrowserConfig {
+    /// Path of the browser binary. `None` searches the usual install locations.
     pub executable_path: Option<String>,
     /// Firefox profile directory.
     ///
@@ -1897,9 +1910,13 @@ pub struct FoxBrowserConfig {
     /// `None` synthesizes a fresh temporary profile per launch, an ephemeral,
     /// one-shot persona with no cross-launch state.
     pub profile_dir: Option<String>,
+    /// Launch without a window. A headful launch needs a display.
     pub headless: bool,
+    /// Viewport width in CSS pixels.
     pub viewport_width: u32,
+    /// Viewport height in CSS pixels.
     pub viewport_height: u32,
+    /// User agent to report. `None` keeps the build's own.
     pub user_agent: Option<String>,
     /// Raw `user.js` content to write into the profile directory before
     /// Firefox starts. The caller (typically `guise`) is responsible for

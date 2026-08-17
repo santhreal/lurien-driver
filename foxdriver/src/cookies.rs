@@ -21,15 +21,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// `Network.Cookie` that's relevant for replay.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapturedCookie {
+    /// Cookie name.
     pub name: String,
+    /// Cookie value.
     pub value: String,
     /// Cookie domain (leading-dot form preserved as-is).
     pub domain: String,
+    /// Path the cookie applies to.
     pub path: String,
     /// Unix epoch seconds; `None` for session cookies that expire
     /// when the browser closes.
     pub expires: Option<i64>,
+    /// The cookie is sent only over TLS.
     pub secure: bool,
+    /// The cookie is unreadable from script.
     pub http_only: bool,
     /// Cookie SameSite attribute as a lowercase string ("strict" /
     /// "lax" / "none"); `None` if unset.

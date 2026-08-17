@@ -41,7 +41,8 @@ const MAX_FRAME: usize = 64 * 1024;
 /// port that was never bound.
 pub async fn wait_until_ready(host: &str, port: u16, deadline: Duration) -> Result<()> {
     let start = Instant::now();
-    let mut last = String::from("no answer yet");
+    // Assigned on every path that reaches the deadline check below.
+    let mut last;
     loop {
         match tokio::time::timeout(ASK_TIMEOUT, ask_status(host, port)).await {
             Ok(Ok(())) => return Ok(()),
