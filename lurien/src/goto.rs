@@ -65,8 +65,13 @@ pub struct GotoOutcome {
 /// The engine observes every browsing context, including the cross-origin one
 /// that paints the widget, and reports what it did. When it reports, it wins:
 /// only that context can see whether the vendor wrote its token. When it stays
-/// silent the page probe classifies, which is what happens on a clean page and
-/// on an engine built without the subsystem.
+/// silent the page probe classifies, which is what happens on a clean page.
+///
+/// A silent engine is only trusted once it has said it started. The probe reads
+/// the top document, so a browser with no observer in it answers `none` for every
+/// guarded page in the world, and that answer is indistinguishable from a clean
+/// page. Refusing here turns a browser built without the subsystem, or one whose
+/// start hook was lost, into a named failure at the first navigation.
 pub async fn goto(page: &Page, url: &str) -> Result<GotoOutcome, Error> {
     let config = crate::challenge::ChallengeConfig::for_process();
     let evidence = config.evidence.clone();
@@ -79,6 +84,11 @@ pub async fn goto(page: &Page, url: &str) -> Result<GotoOutcome, Error> {
     let (kind, engine) =
         classify_with_score_wait(page, &evidence, url, mark, config.engine_deadline_ms()).await?;
     let final_url = page.url().await.unwrap_or_else(|_| url.to_string());
+    if engine.is_none() && !crate::challenge::started(&evidence) {
+        return Err(Error::ChallengeNotStarted {
+            evidence: evidence.display().to_string(),
+        });
+    }
     if let Some(report) = engine.as_ref() {
         if !report.solved {
             let detail = report

@@ -105,6 +105,14 @@
   click, a press with no approach, a token written by anything but the widget, and a
   page that can read the widget. Three of the four latch, so a widget that can be
   fooled writes nothing afterwards rather than passing once.
+- The browser says when it started, and a silent session is refused. The observer
+  appends one `started` row before any page exists, naming the bindings it loaded, and
+  `goto` refuses with `the engine never started its challenge subsystem` when the
+  engine reported nothing and no such row is readable. A browser built without the
+  challenge jar, or one whose start hook was lost in a rebase, answers `none` for every
+  guarded page there is, which is also the honest answer for a clean page; that pair is
+  no longer indistinguishable. `engine_package.rs` holds the patched hook and the row
+  itself, so a rebase that drops either turns the suite red.
 - The `pow` kind is solved in the browser with no helper process. The binding's
   `[work]` table says where the challenge and difficulty live and where the answer
   goes; the engine searches for a nonce in `ChromeWorker` lanes and hands it back by

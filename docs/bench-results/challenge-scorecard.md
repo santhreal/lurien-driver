@@ -256,3 +256,31 @@ evidence.
   writing a plausible token 200 ms after load was refused. One exact `trajectory` of
   a single point, a teleport to the centre with an empty visit, was refused with
   zero moves recorded.
+
+## The start itself
+
+Every row above assumes something was watching the page. That assumption is the one
+failure the page probe cannot see: the probe reads the top document, so a browser
+with no observer in it answers `none` for every guarded page there is, and `none` is
+also the honest answer for a clean page. So the browser says when it started, and a
+driver that shipped a catalog refuses a silent session rather than reporting it as a
+page with nothing on it.
+
+- `Observer.configure` appends one `started` row, carrying the number of catalog
+  bindings it loaded, before any page exists. It is not behind the debug flag: the
+  normal run is the run that needs the distinction.
+- `goto` refuses with `the engine never started its challenge subsystem` when the
+  engine reported nothing and no `started` row is readable, naming the evidence path
+  it read and the reinstall that fixes it.
+- `lurien/tests/engine_package.rs` holds the hook itself: the patch that starts the
+  subsystem from `RemoteAgent.sys.mjs` must still add `await start()`, still name the
+  jar in the package manifest, and `configure` must still write the row a driver
+  reads.
+- Measured on 2026-08-17 against engine 150.0.2-beta.25 and driver 0.1.0:
+  `lurien/tests/e2e_bootstrap.sh` saw one `started` row naming 2 bindings, written
+  before any page row, and a clean page reported as `none`; a session whose evidence
+  directory was read-only was refused by name.
+- Four mutations were checked. `configure` not appending the row, and the `await
+  start()` hook removed from the built browser, each turned a clean page into a
+  refusal. Dropping `await start()` from `engine/patches/challenge-register.patch`,
+  and moving the row back behind the debug flag, each turned `engine_package.rs` red.

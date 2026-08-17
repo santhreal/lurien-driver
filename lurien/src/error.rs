@@ -130,6 +130,17 @@ pub enum Error {
         /// Version this build reads.
         known: u64,
     },
+    /// The browser took a challenge configuration and never started the
+    /// subsystem that reads it, so no page was observed at all.
+    #[error(
+        "the engine never started its challenge subsystem: no started row in {evidence}. \
+         This browser was built without the challenge modules, or lost its start hook. \
+         Reinstall the engine with install.sh, then check LURIEN_BIN points at that build."
+    )]
+    ChallengeNotStarted {
+        /// Evidence path the row is missing from.
+        evidence: String,
+    },
     /// Engine process died.
     #[error("lurien engine crashed. Read the wrapper log at {log_path}, then retry with a fresh profile_dir.")]
     EngineCrash {
@@ -315,6 +326,9 @@ mod tests {
             Error::HardCaptcha { kind: "visual".into() },
             Error::ScoreFailed { detail: "no token after 8000ms".into() },
             Error::EvidenceVersion { found: 99, known: 1 },
+            Error::ChallengeNotStarted {
+                evidence: "/tmp/lurien-challenge-1234.jsonl".into(),
+            },
             Error::EngineCrash { log_path: "/tmp/lurien.log".into() },
             Error::DownloadDirUnusable {
                 path: "/mnt/ro/dl".into(),
@@ -372,6 +386,7 @@ mod tests {
                 | Error::HardCaptcha { .. }
                 | Error::ScoreFailed { .. }
                 | Error::EvidenceVersion { .. }
+                | Error::ChallengeNotStarted { .. }
                 | Error::EngineCrash { .. }
                 | Error::DownloadDirUnusable { .. }
                 | Error::DownloadFailed { .. }
@@ -448,6 +463,12 @@ mod tests {
                     skipped: 0,
                 },
                 "2 click",
+            ),
+            (
+                Error::ChallengeNotStarted {
+                    evidence: "/tmp/lurien-challenge-7.jsonl".into(),
+                },
+                "/tmp/lurien-challenge-7.jsonl",
             ),
         ] {
             let text = err.to_string();

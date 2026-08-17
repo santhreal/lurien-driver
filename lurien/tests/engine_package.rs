@@ -249,3 +249,93 @@ fn the_driver_charges_for_the_read_the_engine_pays_for() {
         "the engine reads a page for a 1/{divisor} share and the driver charges {charged}ms of 3000ms"
     );
 }
+
+/// The subsystem starts from one patched hook, and nothing else starts it.
+///
+/// `Bootstrap.start()` is called from `RemoteAgent.sys.mjs`, which is upstream
+/// Gecko carried as a patch. A rebase that drops that hunk, or an edit that keeps
+/// the hunk but stops calling `start`, leaves a browser that builds, launches,
+/// serves BiDi, and observes nothing: every guarded page then reads as a page with
+/// no challenge on it. The packaging lines are held here too, because a jar that
+/// is not in the manifest makes the import inside the hook throw.
+#[test]
+fn the_patch_still_starts_the_subsystem_with_automation() {
+    let patch = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine/patches/challenge-register.patch");
+    if !patch.is_file() {
+        return;
+    }
+    let source = fs::read_to_string(&patch).expect("challenge-register.patch");
+    for needle in [
+        "remote/components/RemoteAgent.sys.mjs",
+        "resource://lurien-challenge/Bootstrap.sys.mjs",
+        "await start()",
+        "DIRS += [\"challenge\"]",
+        "chrome/challenge@JAREXT@",
+        "chrome/challenge.manifest",
+    ] {
+        assert!(
+            source.contains(needle),
+            "{} no longer carries {needle}, so the challenge subsystem would not start",
+            patch.display()
+        );
+    }
+    // The hook has to be an added line, not context the patch merely reads past.
+    assert!(
+        source
+            .lines()
+            .any(|line| line.starts_with('+') && line.contains("await start()")),
+        "{} mentions await start() without adding it",
+        patch.display()
+    );
+}
+
+/// A started subsystem says so, and the driver reads that word.
+///
+/// The row is how a driver tells "this page has no challenge" apart from "nothing
+/// looked at this page". It is written when the observer takes its configuration,
+/// before any page exists, so it must not be behind the debug flag: a normal run
+/// is exactly the run that needs the distinction.
+#[test]
+fn the_observer_announces_a_start_the_driver_can_read() {
+    let dir = additions();
+    if !dir.is_dir() {
+        return;
+    }
+    let source = fs::read_to_string(dir.join("Observer.sys.mjs")).expect("Observer.sys.mjs");
+    let open = source
+        .find("  configure(config) {")
+        .expect("Observer.sys.mjs declares configure");
+    let end = source[open..]
+        .find("\n  }\n")
+        .expect("configure has a body")
+        + open;
+    let body = &source[open..end];
+    assert!(
+        body.contains(r#"this.#append({ event: "started""#),
+        "configure does not append a started row, so a driver cannot tell a clean page \
+         from a browser with no observer in it"
+    );
+    assert!(
+        !body.contains("debug"),
+        "configure writes its started row behind the debug flag, so a normal run cannot \
+         tell a clean page from a browser with no observer in it"
+    );
+
+    // Read the row the way the engine writes it, through the driver's own reader.
+    let dir = std::env::temp_dir().join(format!("lurien-started-{}", std::process::id()));
+    fs::create_dir_all(&dir).expect("scratch directory");
+    let path = dir.join("evidence.jsonl");
+    fs::write(
+        &path,
+        format!(
+            "{{\"event\":\"started\",\"bindings\":3,\"v\":{}}}\n",
+            lurien::challenge::EVIDENCE_VERSION
+        ),
+    )
+    .expect("write evidence");
+    assert!(
+        lurien::challenge::started(&path),
+        "the driver does not read the started row the engine writes"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}

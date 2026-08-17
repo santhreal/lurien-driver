@@ -840,6 +840,31 @@ pub fn taken(evidence: &Path, url: &str, from: u64) -> bool {
     })
 }
 
+/// Did the browser start its challenge subsystem this session?
+///
+/// The observer appends one `started` row when it takes its configuration, before
+/// any page exists. The driver ships that configuration on every launch, so the
+/// row is the browser's answer to "I read it". Without it the subsystem is not
+/// slow or idle, it is absent: the modules did not package, or the hook that runs
+/// them with automation was lost. Every guarded page would then read as a page
+/// with nothing on it, and a caller acts on that.
+///
+/// Read from the start of the file rather than from a visit's mark, because the
+/// row is written once per session and every later visit is downstream of it.
+#[must_use]
+pub fn started(evidence: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(evidence) else {
+        return false;
+    };
+    text.lines().any(|line| {
+        let Ok(row) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            return false;
+        };
+        version_of(&row) == EVIDENCE_VERSION
+            && row.get("event").and_then(|v| v.as_str()) == Some("started")
+    })
+}
+
 /// The part of the file appended after a mark.
 ///
 /// A mark past the end means the file was replaced rather than appended to, and
@@ -1578,6 +1603,48 @@ mod tests {
         std::fs::write(&path, format!("{{{body}}}\n").replace("a.test", "b.test"))
             .expect("write evidence");
         assert_eq!(verdict(&path, "https://a.test/", 0), Verdict::Pending);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A silent browser is either a clean page or no observer at all, and only the
+    /// start row tells them apart. It has to survive the tests a verdict row does
+    /// not: it carries no url, it is not a verdict, and a row from another build
+    /// cannot vouch for this one.
+    #[test]
+    fn a_start_is_read_from_its_own_row_and_no_other() {
+        let dir = std::env::temp_dir().join(format!("lurien-started-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("evidence.jsonl");
+
+        assert!(!started(&path), "a file that does not exist is not a start");
+
+        let solved = stamped(
+            r#"{"kind":"checkbox","vendor":"v","solved":true,"via":"field","ms":9,"url":"https://a.test/","contexts":1}"#,
+        );
+        let took = stamped(r#"{"event":"taken","url":"https://a.test/"}"#);
+        std::fs::write(&path, format!("{took}\n{solved}\n")).expect("write evidence");
+        assert!(
+            !started(&path),
+            "a session that reported work never said it started"
+        );
+
+        std::fs::write(&path, "{\"event\":\"started\",\"bindings\":4,\"v\":99}\n")
+            .expect("write evidence");
+        assert!(
+            !started(&path),
+            "a start row from another build says nothing about this one"
+        );
+
+        let start = stamped(r#"{"event":"started","bindings":4}"#);
+        std::fs::write(&path, format!("{start}\n{took}\n")).expect("write evidence");
+        assert!(started(&path), "the row the engine writes reads as a start");
+
+        // The row leads the file, and every later row is a row a visit marks past.
+        // Reading from the mark instead of the start of the file would lose it.
+        assert!(
+            started(&path) && verdict(&path, "https://a.test/", u64::try_from(start.len() + 1).unwrap()) == Verdict::Pending,
+            "a later visit's mark must not hide the session's start"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
