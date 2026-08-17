@@ -36,6 +36,28 @@ The proprietary OS font bundles under `bundle/fonts/` are not shipped.
 Linux matched-host does not need them. Cross-OS personas stay unsupported
 in v1.
 
+### Memory
+
+The `gkrust` step is one `rustc` holding the whole Rust half of libxul, and it
+runs while clang is compiling the C++ half. A host that is short of memory kills
+it rather than swapping.
+
+On this workstation an `earlyoom` daemon is configured with
+`-m 15 -s 50 --prefer (cargo|rustc|...)`, so it terminates `rustc` first as soon
+as available memory falls below 15 percent while free swap is under half. The
+build then reports:
+
+```
+error: could not compile `gkrust` (lib)
+  process didn't exit successfully: `.../rustc ...` (signal: 15, SIGTERM)
+```
+
+That is the daemon, not a compiler error, and no rustc version changes it. Read
+`journalctl -u earlyoom | tail` to confirm: a matching
+`sending SIGTERM to process ... "rustc"` line is the answer. Free memory, or
+lower `-j` until the build's own footprint keeps availability above the
+threshold, then build again.
+
 ## Run
 
 ```
