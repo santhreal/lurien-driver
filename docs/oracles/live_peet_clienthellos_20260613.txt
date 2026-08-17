@@ -1,0 +1,36 @@
+# Measured 2026-06-13 via guise StealthClient (wreq/BoringSSL) -> tls.peet.ws/api/all
+# wreq TLS ClientHello is browser-specific (Chrome/Firefox JA4 cipher-hashes match guise exactly).
+Chrome131  ja3_hash=c55b29aa1d9004d3a6855af4dcc0499a  ja4=t13d1516h2_8daaf6152771_02713d6af862
+Firefox133 ja3_hash=2d692a4485ca2f5f2b10ecb2d2909ad3  ja4=t13d1716h2_5b57614c22b0_eeeea6562960
+Safari18   ja3_hash=773906b0efdefa24a7f2b8eb6985bf37  ja4=t13d2014h2_a09f3c656075_874d27d7ca63
+Safari18 ja3=771,4865-4866-4867-49196-49195-52393-49200-49199-52392-49162-49161-49172-49171-157-156-53-47-49160-49170-10,0-23-65281-10-11-16-5-13-18-51-45-43-27-21,29-23-24-25,0
+Safari18 ja4_r_ciphers=000a,002f,0035,009c,009d,1301,1302,1303,c008,c009,c00a,c012,c013,c014,c02b,c02c,c02f,c030,cca8,cca9
+Safari18 ja4_r_sigalgs=0403,0804,0401,0503,0203,0805,0805,0501,0806,0601,0201
+
+# iPad/iOS Safari 18 (wreq SafariIpad18). MEASURED: BYTE-FOR-BYTE IDENTICAL to desktop Safari18 above
+# (same ja3_hash, same ja4, same ciphers/exts/groups/sigalgs). Apple ships ONE coretls per Safari major
+# across macOS/iPadOS/iOS -> the TLS ClientHello does not encode the OS. UA = iPad; CPU OS 18_0. The
+# iPhone/iPad vs macOS distinction lives in the UA + HTTP/2 + JS layers, not TLS. guise SAFARI_IOS_18
+# therefore reuses the measured SAFARI_18 wire slices (PYTHON_REQUESTS<->CURL_8_OPENSSL pattern), iOS-named.
+SafariIpad18 ja3_hash=773906b0efdefa24a7f2b8eb6985bf37  ja4=t13d2014h2_a09f3c656075_874d27d7ca63
+SafariIpad18 ja3=771,4865-4866-4867-49196-49195-52393-49200-49199-52392-49162-49161-49172-49171-157-156-53-47-49160-49170-10,0-23-65281-10-11-16-5-13-18-51-45-43-27-21,29-23-24-25,0
+SafariIpad18 ua=Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1
+# H2 akamai = 2:0;3:100;4:2097152;:1;9:1|10420225|0|m,s,a,p  (pseudo-order m,s,a,p = wreq=curl nghttp2 default, NOT authoritative, same caveat as desktop Safari)
+
+# TCP/IP layer (tcpip.ip.ttl from peet /api/all). HOST-KERNEL egress (Linux), profile-independent.
+# observed ttl=55 -> guise infer_initial_ttl -> initial 64 (Linux/macOS base, -9 hops). Validates guise's de-hop +
+# host-OS OsNetworkStack TTL against the real wire; X049 self-probe TTL half now has a real producer.
+# BOUNDARY: peet captured a MID-FLOW packet (cap_length~583, not a 60-byte SYN) -> no SYN MSS/wscale/options ->
+# JA4T NOT computable from this endpoint (needs raw-SYN tcpdump/eBPF). Other-OS TTL stacks unreachable from a Linux host
+# (TCP/IP SYN is kernel-set, not userland-emittable). egress ttl=55 initial=64.
+
+# Raw egress SYN captured via: sudo tcpdump -ni any -v 'tcp-syn set, tcp-ack clear, dst port 443' (this host, 2026-06-13).
+# Two SYNs, identical:  IP ttl 64, flags [DF], length 60
+#   Flags [S], win 64240, options [mss 1460, sackOK, TS val ... ecr 0, nop, wscale 10], length 0
+# -> JA4T = 64240_2-4-8-1-3_1460_10   (option kinds mss=2 sackOK=4 TS=8 nop=1 wscale=3)
+# FINDING: this host advertises wscale 10 (large net.ipv4.tcp_rmem); guise LINUX_STACK models stock wscale 7.
+# window-scale is a per-host kernel tunable, NOT an OS-family constant -> guise's JA4T coherence MATCHER
+# (ja4t_matches_observed) was hard-asserting wscale and would FALSE-FLAG a legitimate ChromeLinux persona on this host
+# as Ja4t-incoherent. FIX: matcher asserts option-layout + MSS (the OS discriminators) and treats wscale as advisory
+# (ja4t() render still includes it). Locked: os_network::ja4t_matches_observed_treats_window_scale_as_host_variable_
+# advisory + wire_probe::wire_self_probe_coherent_on_the_real_captured_tuned_linux_syn.

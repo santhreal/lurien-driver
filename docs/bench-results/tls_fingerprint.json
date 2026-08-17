@@ -1,0 +1,21 @@
+{
+  "akamai_matches_stock": true,
+  "benchmark": "tls_fingerprint",
+  "endpoint": "tls.peet.ws/api/all",
+  "ja3_matches_stock": true,
+  "ja4_matches_stock": true,
+  "reynard": {
+    "akamai_h2": "1:65536;2:0;4:131072;5:16384|12517377|0|m,p,a,s",
+    "ja3_hash": "ed889a3607dd4b8d022c0bd186a6ca57",
+    "ja4": "t13d1616h2_86a278354501_0c27189014cf",
+    "peetprint_hash": "26e5bbd743708849d2bb611a6f6d0fd7",
+    "tcpip": "{\"cap_length\":727,\"dst_port\":443,\"ip\":{\"dst_ip\":\"205.185.123.167\",\"id\":23847,\"ip_version\":4,\"src_ip\":\"98.179.77.249\",\"ttl\":55},\"src_port\":42192,\"tcp\":{\"ack\":1886965881,\"checksum\":11947,\"seq\":2507052762,\"window\":63}}",
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0"
+  },
+  "stock": {
+    "akamai_h2": "1:65536;2:0;4:131072;5:16384|12517377|0|m,p,a,s",
+    "ja3_hash": "ed889a3607dd4b8d022c0bd186a6ca57",
+    "ja4": "t13d1616h2_86a278354501_0c27189014cf",
+    "peetprint_hash": "26e5bbd743708849d2bb611a6f6d0fd7"
+  }
+}

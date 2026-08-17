@@ -1,0 +1,10 @@
+name = "hcaptcha_audio"
+kind = "audio"
+
+[signals]
+iframe_src = ["hcaptcha.com/captcha/v1", "newassets.hcaptcha.com"]
+custom_elements = []
+selectors = ["[aria-label~=\"audio\"]"]
+
+target = "audio challenge button in this BC"
+token = { hidden_input = "h-captcha-response" }

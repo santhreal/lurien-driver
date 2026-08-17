@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>page with a checkbox challenge</title>
+<!--
+  The page half of the `checkbox` fixture.
+
+  The parent holds the iframe and nothing else. It cannot read the widget, cannot
+  measure the checkbox inside it, and cannot see the token: everything a page
+  script solver would need is on the other side of an origin boundary. The child
+  URL is substituted by the test harness so the two halves come from different
+  hosts.
+-->
+<h1>Sign in</h1>
+<form>
+  <label>Email <input name="email" type="email" value="fixture@example.test"></label>
+  <iframe src="CHILD_URL" title="widget" width="320" height="70" style="border:1px solid #ccc"></iframe>
+  <button type="submit">Continue</button>
+</form>
+<script>
+  // Proof the parent is blind: reading into the child throws, and the harness
+  // records that it did.
+  window.fixtureParentCanSeeWidget = (() => {
+    try {
+      return Boolean(document.querySelector("iframe").contentDocument.getElementById("box"));
+    } catch (e) {
+      return false;
+    }
+  })();
+</script>

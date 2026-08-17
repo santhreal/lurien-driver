@@ -1,0 +1,13 @@
+name = "recaptcha"
+kind = "visual"
+
+[signals]
+iframe_src = ["recaptcha", "google.com/recaptcha"]
+custom_elements = [".g-recaptcha"]
+cookies = []
+
+target = "iframe[src*=recaptcha]"
+token = { hidden_input = "g-recaptcha-response" }
+
+[integrity]
+always_block_sitekeys = []

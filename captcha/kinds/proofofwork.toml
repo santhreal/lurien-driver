@@ -1,0 +1,10 @@
+name = "proofofwork"
+kind = "pow"
+
+[signals]
+iframe_src = []
+custom_elements = ["altcha-widget"]
+scripts = ["altcha", "hashcash", "pow.js"]
+
+target = "no interactive element; the worker solves and posts"
+token = { hidden_input = "altcha" }

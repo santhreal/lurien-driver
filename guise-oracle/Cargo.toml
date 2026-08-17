@@ -1,0 +1,27 @@
+[package]
+name = "guise-oracle"
+version = "0.1.3"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+authors = ["Santh <64453045+santhreal@users.noreply.github.com>"]
+repository = "https://github.com/santhreal/guise-oracle"
+homepage = "https://santh.dev"
+documentation = "https://docs.rs/guise-oracle"
+description = "Shared surface taxonomy and differential-oracle data types for the guise stealth stack"
+readme = "README.md"
+keywords = ["stealth", "fingerprint", "anti-bot", "browser", "taxonomy"]
+categories = ["web-programming", "authentication"]
+
+[package.metadata.santh]
+status = "beta"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dev-dependencies]
+proptest = { workspace = true }

@@ -1,0 +1,17 @@
+name = "cloudflare"
+kind = "score"
+
+[signals]
+iframe_src = ["challenges.cloudflare.com", "turnstile"]
+custom_elements = ["cf-turnstile"]
+cookies = ["cf_clearance"]
+
+target = "first checkbox in this BC"
+token = { hidden_input = "cf-turnstile-response", cookie = "cf_clearance" }
+
+[integrity]
+always_block_sitekeys = [
+    "1x00000000000000000000AA",
+    "2x00000000000000000000AB",
+    "3x00000000000000000000FF",
+]

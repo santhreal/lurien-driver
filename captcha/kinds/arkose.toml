@@ -1,0 +1,10 @@
+name = "arkose"
+kind = "visual"
+
+[signals]
+iframe_src = ["arkoselabs.com", "funcaptcha.com", "client-api.arkoselabs.com"]
+custom_elements = []
+scripts = ["arkoselabs.com/v2/api.js"]
+
+target = "first visual grid in this BC"
+token = { hidden_input = "fc-token", verify_field = "verification_token" }

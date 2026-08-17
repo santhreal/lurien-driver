@@ -1,0 +1,11 @@
+name = "akamai"
+kind = "score"
+
+[signals]
+iframe_src = []
+custom_elements = []
+cookies = ["_abck", "bm_sz"]
+scripts = ["akam/", "/akam/13/"]
+
+target = "no interactive element; the score is decided before paint"
+token = { cookie = "_abck" }

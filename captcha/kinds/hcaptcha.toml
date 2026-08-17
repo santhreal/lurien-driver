@@ -1,0 +1,13 @@
+name = "hcaptcha"
+kind = "visual"
+
+[signals]
+iframe_src = ["hcaptcha.com"]
+custom_elements = [".h-captcha"]
+cookies = []
+
+target = "iframe[src*=hcaptcha.com]"
+token = { hidden_input = "h-captcha-response" }
+
+[integrity]
+always_block_sitekeys = []

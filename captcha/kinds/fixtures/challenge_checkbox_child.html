@@ -1,0 +1,62 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>checkbox widget</title>
+<!--
+  The widget half of the `checkbox` fixture.
+
+  Served from a different host than its parent, so the browser gives it its own
+  browsing context in its own process, which is the shape every real challenge
+  widget has and the reason page script cannot solve one.
+
+  It writes its token only for a trusted click. A synthesized DOM event, an
+  element.click(), or a dispatchEvent all arrive with isTrusted false and are
+  ignored, exactly as a vendor ignores them. So a written token proves the
+  engine reached this context and dispatched through the real event path.
+-->
+<style>
+  body { font: 13px system-ui; margin: 0; padding: 12px; }
+  #box {
+    width: 22px; height: 22px; border: 2px solid #666; border-radius: 3px;
+    display: inline-block; vertical-align: middle; cursor: pointer;
+  }
+  #box[aria-checked="true"] { background: #2b7; border-color: #2b7; }
+</style>
+
+<div id="box" role="checkbox" aria-checked="false" tabindex="0"></div>
+<span id="label">Verify you are human</span>
+<input type="hidden" name="fixture-token" value="">
+<div id="state">untouched</div>
+
+<script>
+  const box = document.getElementById("box");
+  const token = document.querySelector('input[name="fixture-token"]');
+  const state = document.getElementById("state");
+  let downTrusted = false;
+  let moves = 0;
+
+  addEventListener("mousemove", event => {
+    if (event.isTrusted) {
+      moves += 1;
+    }
+  });
+
+  box.addEventListener("mousedown", event => {
+    downTrusted = event.isTrusted;
+  });
+
+  box.addEventListener("click", event => {
+    if (!event.isTrusted || !downTrusted) {
+      state.textContent = "refused: untrusted";
+      return;
+    }
+    // A real widget wants motion before the press. One teleport-and-click is a
+    // signal on its own, so the fixture holds the same line.
+    if (moves < 3) {
+      state.textContent = "refused: no approach (" + moves + " moves)";
+      return;
+    }
+    box.setAttribute("aria-checked", "true");
+    token.value = "fixture-" + moves + "-" + Date.now();
+    state.textContent = "solved";
+  });
+</script>

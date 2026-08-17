@@ -1,0 +1,22 @@
+# Closed kinds. A vendor TOML that names anything else is red.
+# The registry test enumerates this file at run time.
+
+kinds = [
+    "none",
+    "score",
+    "checkbox",
+    "visual",
+    "slider",
+    "audio",
+    "pow",
+    "fail",
+]
+
+# Required fields on every vendor file.
+vendor_fields = [
+    "name",
+    "kind",
+    "signals.iframe_src",
+    "target",
+    "token",
+]

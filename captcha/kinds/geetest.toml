@@ -1,0 +1,10 @@
+name = "geetest"
+kind = "slider"
+
+[signals]
+iframe_src = ["geetest.com", "static.geetest.com"]
+custom_elements = []
+selectors = [".geetest_slider_button", ".geetest_panel"]
+
+target = "slider handle in this BC"
+token = { hidden_input = "geetest_challenge", verify_field = "geetest_validate" }

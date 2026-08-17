@@ -1,0 +1,13 @@
+lurien-browser (MIT OR Apache-2.0)
+  Copyright Santh. Authors: Santh <64453045+santhreal@users.noreply.github.com>
+
+guise, guise-*, runtime-foxdriver (MIT OR Apache-2.0)
+  Persona and BiDi driver. Linked into lurien-browser.
+
+engine/ (MPL-2.0)
+  Patched Gecko / Camoufox. Separate process. Never linked into the MIT crate.
+  Observer primitives under engine/additions/challenge/ are MPL.
+
+This product includes software developed by the Mozilla Foundation
+and the Camoufox project. See engine/NOTICE when the engine tree
+moves here.

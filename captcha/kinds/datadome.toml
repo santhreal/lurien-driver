@@ -1,0 +1,10 @@
+name = "datadome"
+kind = "slider"
+
+[signals]
+iframe_src = ["captcha.datadome.co", "geo.captcha-delivery.com"]
+custom_elements = []
+cookies = ["datadome"]
+
+target = "slider handle in this BC"
+token = { cookie = "datadome" }

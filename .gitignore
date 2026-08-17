@@ -1,0 +1,14 @@
+# The engine is its own repository (Gecko fork, MPL) with a multi-GB build tree.
+engine/
+
+# Build output. The host's cargo config owns the target directory.
+target/
+**/*.rs.bk
+
+# Review-only, never published.
+BACKLOG.md
+**/BACKLOG.md
+
+# Scratch from local runs.
+*.jsonl
+*.profraw

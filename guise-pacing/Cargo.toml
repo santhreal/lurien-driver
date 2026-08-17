@@ -1,0 +1,28 @@
+[package]
+name = "guise-pacing"
+version = "0.1.5"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+authors = ["Santh <64453045+santhreal@users.noreply.github.com>"]
+repository = "https://github.com/santhreal/guise-pacing"
+homepage = "https://santh.dev"
+documentation = "https://docs.rs/guise-pacing"
+readme = "README.md"
+description = "Pure retry backoff, jitter, and Retry-After pacing primitives"
+keywords = ["stealth", "pacing", "retry", "backoff", "jitter"]
+categories = ["network-programming", "web-programming"]
+
+[dependencies]
+httpdate = "1.0.3"
+rand = "0.8"
+thiserror = "2.0.18"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[package.metadata.santh]
+status = "alpha"
+
+[dev-dependencies]
+proptest = { workspace = true }
