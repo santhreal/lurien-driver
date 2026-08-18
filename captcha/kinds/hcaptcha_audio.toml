@@ -6,5 +6,9 @@ iframe_src = ["hcaptcha.com/captcha/v1", "newassets.hcaptcha.com"]
 custom_elements = []
 selectors = ["[aria-label~=\"audio\"]"]
 
-target = "audio challenge button in this BC"
+# The control that offers the recording, which is the element that identifies this
+# widget in its own context. What the audio task then puts on screen is minted per
+# session, so there is no [audio] table here and a solve is refused by name rather
+# than pressing a guessed selector.
+target = "[aria-label~=\"audio\"]"
 token = { hidden_input = "h-captcha-response" }

@@ -73,6 +73,25 @@ target_forms = [
 # refused by name: the widget is known, the selectors that would answer it are
 # not. That is a smaller lie than a table of guessed class names.
 
+# An `audio` binding also carries an [audio] table. An audio challenge plays a
+# recording of its own answer, so the binding says where the control that plays it
+# is, which element holds the clip, where the answer is typed, and what the answer
+# is spelled with. The bytes are fetched in the widget's own context and handed to
+# the helper; nothing outside the browser touches the vendor's network.
+#
+#   open      selector of the control that plays or reveals the recording
+#   source    selector of the element whose current source is the clip
+#   answer    selector of the field the transcript is typed into
+#   submit    optional selector of the button that confirms the answer
+#   reload    optional selector of the control that serves a different recording,
+#             which is what a refused transcript asks for instead of guessing
+#   alphabet  characters the answer is drawn from, as a literal set. The decode is
+#             masked to one token per character of it, so a code cannot come back
+#             as a sentence. An empty alphabet is an unmasked transcript.
+#
+# An `audio` binding with no [audio] table is recognized and refused by name, the
+# same way a `visual` binding with no [grid] table is.
+
 # A `pow` binding also carries a [work] table. Proof of work is arithmetic, not
 # perception: the binding says where to read the challenge, how hard it is, and
 # where the answer goes, and the browser does the rest with no helper process.

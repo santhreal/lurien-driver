@@ -46,6 +46,10 @@ pub struct VendorBinding {
     /// `[grid]` pairs for a tile kind: where the question is written, what a tile
     /// is, and what confirms the set. Empty for every other kind.
     pub grid: &'static [(&'static str, &'static str)],
+    /// `[audio]` pairs for a spoken kind: what plays the recording, what holds it,
+    /// where the answer is typed, and what it is spelled with. Empty for every
+    /// other kind.
+    pub audio: &'static [(&'static str, &'static str)],
 }
 
 include!(concat!(env!("OUT_DIR"), "/catalog.rs"));
@@ -155,6 +159,7 @@ pub fn catalog_json() -> serde_json::Value {
                     "token_messages": b.token_messages,
                     "work": pairs(b.work),
                     "grid": pairs(b.grid),
+                    "audio": pairs(b.audio),
                 })
             })
             .collect(),
