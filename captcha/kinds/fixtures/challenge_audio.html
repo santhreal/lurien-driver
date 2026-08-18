@@ -1,0 +1,169 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>type what you hear</title>
+<!--
+  The `audio` fixture: a spoken code, minted per load, that exists only as sound.
+
+  The page never holds the answer. The server mints the digits behind a nonce and
+  this page carries `sha256(code)`, graded in the page with WebCrypto, so the code
+  is not in the DOM, not in a script, and not in a source map. The recording is
+  synthesized per nonce, so no clip is committed and a remembered transcript is
+  worth nothing.
+
+  The token is written only when all of these hold:
+
+    - the recording was requested by a trusted press of the play control. An
+      untrusted click gets no source at all, so a solver that skips the control
+      has nothing to fetch.
+    - every keystroke was trusted, so a value assignment or a dispatched
+      KeyboardEvent is refused.
+    - the keystrokes are spread in time, at least 20 ms apart, so a whole code
+      arriving in one millisecond is refused.
+    - the verify press is trusted, and the typed characters hash to the code the
+      server spoke.
+
+  FIXTURE_NONCE and FIXTURE_HASH are substituted by lurien/tests/audio_fixture.py.
+-->
+<style>
+  body { font: 14px system-ui; margin: 0; padding: 14px; background: #fff; }
+  #widget { width: 340px; border: 1px solid #ccc; padding: 12px; }
+  #instruction { margin: 0 0 10px; font-weight: 600; }
+  button { font: inherit; padding: 4px 10px; }
+  #audio-answer { font: inherit; width: 200px; padding: 4px; margin-top: 10px; }
+  #state { margin-top: 8px; color: #444; }
+</style>
+
+<div id="widget">
+  <p id="instruction">Press play and type the digits you hear</p>
+  <button id="audio-play" type="button" aria-label="play audio challenge">Play</button>
+  <button id="audio-reload" type="button" aria-label="get a new recording">New recording</button>
+  <audio id="captcha-audio" preload="none" controls></audio>
+  <br>
+  <input id="audio-answer" name="audio-answer" type="text" autocomplete="off" inputmode="numeric">
+  <br>
+  <button id="verify" type="button">Verify</button>
+  <input type="hidden" name="fixture-token" value="">
+  <div id="state">waiting</div>
+</div>
+
+<script>
+  const play = document.getElementById("audio-play");
+  const reload = document.getElementById("audio-reload");
+  const clip = document.getElementById("captcha-audio");
+  const field = document.getElementById("audio-answer");
+  const verify = document.getElementById("verify");
+  const token = document.querySelector('input[name="fixture-token"]');
+  const state = document.getElementById("state");
+
+  // Which recording this widget is currently asking about, and the digest of what
+  // it says. Both are replaced when a new recording is minted.
+  let nonce = "FIXTURE_NONCE";
+  let digest = "FIXTURE_HASH";
+  // The mode the proof asked for, carried onto every later mint so a run that
+  // wants an unreadable recording keeps getting one.
+  const mode = new URLSearchParams(location.search).get("audio") || "";
+  const query = mode ? `?audio=${encodeURIComponent(mode)}` : "";
+
+  let played = false;
+  let untrusted = false;
+  const at = [];
+
+  /** Hex SHA-256 of what was typed, so the answer is compared without being held. */
+  async function hashOf(text) {
+    const bytes = new TextEncoder().encode(text);
+    const out = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(out))
+      .map(byte => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  play.addEventListener("click", event => {
+    if (!event.isTrusted) {
+      untrusted = true;
+      state.textContent = "refused: untrusted press of the play control";
+      return;
+    }
+    played = true;
+    // The source appears only now. Before the press there is nothing to fetch,
+    // which is what makes the control part of the answer.
+    clip.src = `/clip/${nonce}.wav`;
+    clip.play().catch(() => {});
+    state.textContent = "playing";
+  });
+
+  reload.addEventListener("click", async event => {
+    if (!event.isTrusted) {
+      untrusted = true;
+      state.textContent = "refused: untrusted press of the reload control";
+      return;
+    }
+    const minted = await fetch(`/mint${query}`).then(response => response.json());
+    nonce = minted.nonce;
+    digest = minted.hash;
+    played = false;
+    at.length = 0;
+    clip.pause();
+    clip.removeAttribute("src");
+    clip.load();
+    field.value = "";
+    state.textContent = "new recording";
+  });
+
+  // A keystroke is a keydown and a keyup, and both have to come from a keyboard.
+  // The gaps between them are what a page measuring typing reads.
+  for (const name of ["keydown", "keyup"]) {
+    field.addEventListener(name, event => {
+      if (!event.isTrusted) {
+        untrusted = true;
+        return;
+      }
+      if (name === "keyup") {
+        at.push(event.timeStamp);
+      }
+    });
+  }
+
+  /** Were these keystrokes struck one at a time, the way a hand strikes them? */
+  function paced() {
+    for (let i = 1; i < at.length; i++) {
+      const gap = at[i] - at[i - 1];
+      if (gap < 20) {
+        return `${Math.round(gap)} ms between two keystrokes is not typing`;
+      }
+    }
+    return null;
+  }
+
+  verify.addEventListener("click", async event => {
+    if (!event.isTrusted || untrusted) {
+      state.textContent = "refused: untrusted input";
+      return;
+    }
+    if (!played) {
+      state.textContent = "refused: the recording was never requested";
+      return;
+    }
+    const typed = field.value.trim();
+    if (!typed) {
+      state.textContent = "refused: nothing was typed";
+      return;
+    }
+    // At least one keystroke per character. More is a correction, which a hand
+    // makes; fewer means the value was set rather than typed.
+    if (at.length < typed.length) {
+      state.textContent = `refused: ${typed.length} characters from ${at.length} keystrokes`;
+      return;
+    }
+    const complaint = paced();
+    if (complaint) {
+      state.textContent = `refused: ${complaint}`;
+      return;
+    }
+    if ((await hashOf(typed)) !== digest) {
+      state.textContent = "wrong: that is not what the recording says";
+      return;
+    }
+    token.value = `fixture-audio-${nonce}`;
+    state.textContent = "solved";
+  });
+</script>
