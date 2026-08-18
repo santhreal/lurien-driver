@@ -122,7 +122,7 @@ cat > "$work/config.json" <<JSON
   "kind_budget_ms": { "audio": 120000 },
   "claimed_kinds": ["none", "score", "checkbox", "visual", "audio", "pow", "slider", "fail"],
   "poll_ms": 200,
-  "helper": { "host": "127.0.0.1", "port": $helper_port, "token": "$helper_token" }
+  "helper": { "host": "127.0.0.1", "port": $helper_port, "token": "$helper_token", "timeoutMs": 60000 }
 }
 JSON
 
