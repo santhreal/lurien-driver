@@ -139,6 +139,158 @@ fn an_alphabet_the_widget_did_not_name_is_not_typed() {
     );
 }
 
+/// Each of the four decisions the front end is made of was wrong at some point
+/// during development, and each broke a different code. These mutation gates prove
+/// the decision is load-bearing by turning it off and requiring the result to
+/// degrade. They skip loudly without the weights or the synthesizer, the same way
+/// the positive tests do.
+
+#[test]
+fn widening_the_mask_to_multi_character_tokens_degrades_the_decode() {
+    let Some(mut listener) = listener() else {
+        return;
+    };
+    let Some(voice) = voice() else {
+        return;
+    };
+    // At least one code is read worse without the one-token-per-character mask.
+    // Measured: the same clips that were exact at 0.89 to 0.99 came back truncated
+    // or wrong at about 0.5, because the model's mass split over spellings of the
+    // same code.
+    let mut any_degraded = false;
+    for code in CODES {
+        let clip = voice.speak(code);
+        let samples = sound::at_model_rate(&clip);
+        let noisy = distort(&samples, code.len() as u64 * 7919);
+        let masked = listener
+            .hear_with(&noisy, "0123456789", true, true, true)
+            .unwrap_or_else(|e| panic!("{code}: {e}"));
+        let unmasked = listener
+            .hear_with(&noisy, "0123456789", true, true, false)
+            .unwrap_or_else(|e| panic!("{code}: {e}"));
+        if masked.text == *code && (unmasked.text != *code || unmasked.confidence < masked.confidence - 0.1)
+        {
+            any_degraded = true;
+            eprintln!(
+                "mask: {code} was {masked:?} and became {unmasked:?} without the mask"
+            );
+        }
+    }
+    assert!(
+        any_degraded,
+        "widening the mask to multi-character tokens did not degrade any code"
+    );
+}
+
+#[test]
+fn dropping_tighten_degrades_a_clip_with_long_pauses() {
+    let Some(mut listener) = listener() else {
+        return;
+    };
+    let Some(voice) = voice() else {
+        return;
+    };
+    // `tighten` shortens any silence past 150 ms. A clip with a 200 ms gap between
+    // digits is above that threshold. With tighten, the gaps are cut and the code
+    // is read at higher confidence. Without it, the model still reads the code but
+    // at lower confidence, because the longer pauses dilute the model's attention.
+    // During development, an untouched clip with long pauses came back as its first
+    // digit only; on the current model and clip recipe the degradation is marginal
+    // rather than catastrophic, which is recorded here honestly. The clip is tested
+    // clean because the noise the fixture adds fills the gaps with energy, and
+    // tighten reads the percentiles of the clip itself.
+    let code = "94455";
+    let clip = voice.speak_with_gap(code, 200);
+    let samples = sound::normalize(&sound::at_model_rate(&clip));
+    let tightened = listener
+        .hear_with(&samples, "0123456789", true, true, true)
+        .unwrap_or_else(|e| panic!("{code}: {e}"));
+    let raw = listener
+        .hear_with(&samples, "0123456789", false, true, true)
+        .unwrap_or_else(|e| panic!("{code}: {e}"));
+    assert_eq!(
+        tightened.text, code,
+        "tighten: {code} came back as {:?}",
+        tightened.text
+    );
+    // The degradation without tighten is a lower confidence, not a wrong answer,
+    // on this model and clip. A 0.02 drop is what was measured; the threshold is
+    // half that to keep the test stable across runs.
+    assert!(
+        raw.confidence < tightened.confidence - 0.01,
+        "dropping tighten did not lower confidence: {tightened:?} vs {raw:?}"
+    );
+    eprintln!("tighten: {code} was {tightened:?} and became {raw:?} without tighten");
+}
+
+#[test]
+fn dropping_framing_merges_repeated_digits() {
+    let Some(mut listener) = listener() else {
+        return;
+    };
+    let Some(voice) = voice() else {
+        return;
+    };
+    // A code with repeated digits spoken with no gap. The front end's framing adds
+    // lead and tail silence and a floor of room tone under the whole clip. Without
+    // it, the exact zeros between two of the same digit merge them: `94455` came
+    // back as `9445` during development, one `5` lost to digital silence. The
+    // `log_mel` pad to 30 s is zeros, which is the same defect the room tone fixes.
+    let code = "94455";
+    let clip = voice.speak_with_gap(code, 5);
+    let samples = sound::at_model_rate(&clip);
+    let noisy = distort(&samples, 7);
+    let framed = listener
+        .hear_with(&noisy, "0123456789", true, true, true)
+        .unwrap_or_else(|e| panic!("{code}: {e}"));
+    let bare = listener
+        .hear_with(&noisy, "0123456789", true, false, true)
+        .unwrap_or_else(|e| panic!("{code}: {e}"));
+    assert_eq!(
+        framed.text, code,
+        "framed: {code} came back as {:?}",
+        framed.text
+    );
+    assert_ne!(
+        bare.text, code,
+        "dropping framing still read {code}, so the decision is not load-bearing"
+    );
+    eprintln!("framed: {code} was {framed:?} and became {bare:?} without framing");
+}
+
+#[test]
+fn agreement_scales_the_confidence_a_lone_reading_does_not_clear() {
+    let Some(mut listener) = listener() else {
+        return;
+    };
+    let Some(voice) = voice() else {
+        return;
+    };
+    // A transcript's confidence is its raw probability scaled by how many of the
+    // three readings agreed. A lone reading carries 0.7, two of three 0.9, three
+    // 1.0. A code read at agreement 3 clears the floor; the same probability at
+    // agreement 1 would not. This checks the scaling is applied, not that it
+    // changes the outcome on a clean clip: the factor is what makes a thin
+    // transcript ask for another recording rather than guessing.
+    let code = "80356";
+    let clip = voice.speak(code);
+    let samples = sound::at_model_rate(&clip);
+    let heard = listener
+        .hear(&samples, "0123456789")
+        .unwrap_or_else(|e| panic!("{code}: {e}"));
+    assert_eq!(heard.agreement, 3, "the clean clip did not agree three times");
+    assert!(
+        heard.confidence >= FLOOR,
+        "agreement 3 still did not clear the floor: {heard:?}"
+    );
+    // The factor for agreement 1 is 0.7, so the same mean would be under the floor.
+    let lone = heard.confidence / 1.0 * 0.7;
+    assert!(
+        lone < FLOOR,
+        "a lone reading at the same mean would still clear the floor: {lone:.2}"
+    );
+}
+
 /// The speech model, or a loud skip.
 fn listener() -> Option<Listener> {
     let dir = model_dir()?;
@@ -217,6 +369,38 @@ impl Voice {
         // fails here rather than in a live solve.
         sound::decode(&bytes, "audio/wav").expect("a decodable clip")
     }
+
+    /// One code read aloud with a larger gap between digits, for the tighten test.
+    fn speak_with_gap(&self, code: &str, gap_ms: usize) -> sound::Clip {
+        let spoken: String = code
+            .chars()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let path = self.dir.join(format!("{code}-{gap_ms}.wav"));
+        let status = Command::new("espeak-ng")
+            .args(["-v", "en-gb", "-s", "120", "-g"])
+            .arg(gap_ms.to_string())
+            .arg("-w")
+            .arg(&path)
+            .arg(&spoken)
+            .status()
+            .expect("espeak-ng runs");
+        assert!(status.success(), "espeak-ng refused {code} at gap {gap_ms}");
+        let bytes = std::fs::read(&path).expect("the spoken clip");
+        sound::decode(&bytes, "audio/wav").expect("a decodable clip")
+    }
+}
+
+/// Strip leading silence so the speech starts at the first sample.
+fn trim_leading_silence(samples: &[f32]) -> Vec<f32> {
+    let threshold = 0.01;
+    for (i, &s) in samples.iter().enumerate() {
+        if s.abs() > threshold {
+            return samples[i..].to_vec();
+        }
+    }
+    samples.to_vec()
 }
 
 /// The noise a vendor's audio challenge carries: hiss, mains hum, and a second

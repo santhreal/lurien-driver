@@ -169,22 +169,57 @@ impl Listener {
     /// If the alphabet spells nothing this model can emit, or if the graph rejects
     /// the tensors.
     pub fn hear(&mut self, samples: &[f32], alphabet: &str) -> Result<Transcript, String> {
+        self.hear_with(samples, alphabet, true, true, true)
+    }
+
+    /// Transcribe with individual front-end decisions toggled, for mutation tests.
+    ///
+    /// `tighten` shortens long pauses, `frame` adds lead and tail silence with
+    /// room tone, and `mask` restricts the decode to one token per character of
+    /// the alphabet. Each is on by default; turning one off is what proves it was
+    /// load-bearing.
+    ///
+    /// # Errors
+    /// If the alphabet spells nothing this model can emit, or if the graph rejects
+    /// the tensors.
+    pub fn hear_with(
+        &mut self,
+        samples: &[f32],
+        alphabet: &str,
+        tighten: bool,
+        frame: bool,
+        mask: bool,
+    ) -> Result<Transcript, String> {
         if samples.is_empty() {
             return Err("the clip holds no samples, so there is nothing to transcribe".to_string());
         }
-        let allowed = self.allowed(alphabet)?;
-        // The pauses are shortened once, on the clip as served, so all three
-        // readings are of the same speech and the vote is about the speed and not
-        // about which gaps happened to be cut.
-        let tightened = sound::tighten(samples, MAX_GAP_S);
+        let allowed = if mask {
+            self.allowed(alphabet)?
+        } else {
+            // An unmasked decode still spells through the alphabet, so the text is
+            // in the binding's set, but the model's mass is split over every
+            // spelling it knows rather than one per character.
+            None
+        };
+        let fixed = if tighten {
+            sound::tighten(samples, MAX_GAP_S)
+        } else {
+            samples.to_vec()
+        };
         let mut readings: Vec<(String, String, f32)> = Vec::with_capacity(SPEEDS.len());
         for speed in SPEEDS {
             let audio = if (speed - 1.0).abs() < f64::EPSILON {
-                tightened.clone()
+                fixed.clone()
             } else {
-                sound::stretch(&tightened, speed)
+                sound::stretch(&fixed, speed)
             };
-            let mel = self.front.log_mel(&framed(&sound::normalize(&audio)));
+            let normalized = sound::normalize(&audio);
+            let input = if frame {
+                framed(&normalized)
+            } else {
+                normalized
+            };
+            let mel = self.front.log_mel(&input);
             let hidden = self.encode(&mel)?;
             let (raw, mean) = self.decode(&hidden, allowed.as_deref())?;
             let text = spell(&raw, alphabet);
