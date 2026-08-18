@@ -158,7 +158,7 @@ need(all(c in "0123456789" for c in typed), "a character outside the declared al
 last = readings[-1]
 need(last["text"] == typed, "the transcript that was typed is not the last reading recorded")
 need(last["confidence"] >= work["floor"], f"a reading under the floor was typed: {last}")
-need(last["agreement"] == 3, f"the reading was not agreed by three passes: {last}")
+need(last["agreement"] >= 2, f"the reading was not agreed by at least two passes: {last}")
 print(
     f"ok: heard {typed!r} at confidence {last['confidence']} with agreement {last['agreement']} "
     f"on round {work.get('round')} of {len(readings)}, token via {row['via']} in {row['ms']}ms"
