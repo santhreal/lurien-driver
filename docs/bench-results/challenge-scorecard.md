@@ -29,7 +29,7 @@ and the row rewritten. A proof belongs to a build, not to a feature.
 | `visual` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 16 questions over 8 visits, every set exact: 2 to 4 tiles of 9 named, clicked and accepted, one run 3 tiles for "Select all images with a red circle" in 13799 ms, `via: field`; a question the grid does not answer was refused with every tile's score | `lurien/tests/e2e_visual.sh`; the target shape and the matching tiles are minted per load, the widget accepts only trusted clicks in its own context, and the exact set must match. A helper started with no model refuses by name rather than guessing. `captcha/vision/tests/grid_detection.rs` answers the same geometry offline, including the tile-sized boxes a bordered tile produces |
 | `pow` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 4 hex zeros cleared in 143 hashes across 7 lanes, typed and accepted, whole page 9689 ms, `via: field` | `lurien/tests/e2e_pow.sh`; the page mints a fresh challenge and a random difficulty per load and accepts only a digest it verified itself, typed key by key with trusted events. `lurien/tests/pow_sha256.mjs` pins the worker digest against a reference implementation |
 | `slider` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | notch measured from pixels, 259 px travel dragged in 20 moves, accepted, whole page 4791 ms, `via: field` | `lurien/tests/e2e_slider.sh`; the notch moves every load, the widget refuses a travel with fewer than eight moves, one step size, no correction, or under 80 ms, and the same run with an evenly spaced profile is refused. `captcha/vision/tests/real_crop.rs` pins the measurement against a crop the browser rendered |
-| `audio` | fixture | 2026-08-18 | 150.0.2-beta.25 | 0.1.0 | spoken code heard and typed, accepted, whole page 19167 ms, `via: field`; a recording with no speech under the same noise was refused after three recordings with nothing typed | `lurien/tests/e2e_audio.sh`; the code is minted per load, spoken by the host's synthesizer under hiss, hum and a second speaker, and the page holds only its SHA-256, so the answer is nowhere in the DOM. The clip appears only after a trusted press and the answer is accepted only when typed key by key. `captcha/vision/tests/audio_transcription.rs` reads the same recipe offline |
+| `audio` | fixture | 2026-08-18 | 150.0.2-beta.25 | 0.1.0 | over 7 runs and 12 visits on a 32-core host, 11 codes heard and typed at confidence 0.868 to 0.989 (5 at agreement 3, 2 at agreement 2), one visit lost to a helper timeout; whole page 24 to 50 s, `via: field`; a recording with no speech was refused after three recordings with nothing typed | `lurien/tests/e2e_audio.sh`; the code is minted per load, spoken by the host's synthesizer under hiss, hum and a second speaker, and the page holds only its SHA-256, so the answer is nowhere in the DOM. The clip appears only after a trusted press and the answer is accepted only when typed key by key. `captcha/vision/tests/audio_transcription.rs` reads the same recipe offline |
 | `fail` | n/a | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | typed error, no fabricated token | `tests/verb_fail_closed.rs` |
 
 ## Not claimed
@@ -192,6 +192,21 @@ The `audio` fixture rules out an answer that was read rather than heard:
   with nothing typed and a refusal naming the floor it applied, which is what rules
   out a solver that types its best guess. The fourth starts the helper with no
   speech model and requires a refusal naming the model it was not given.
+- Measured on 2026-08-18 against engine 150.0.2-beta.25 and driver 0.1.0 on a
+  32-core host with an RTX 4090: over 7 runs and 12 visits, 11 codes were heard
+  and typed at confidence 0.868 to 0.989. Five readings agreed 3 of 3 and two
+  agreed 2 of 3; both cleared the 0.8 floor. One visit was lost to a helper
+  timeout on a second connection, not a decode failure. Whole page 24 to 50 s,
+  most of which is the visit the vendor is owed and the triple-speed decode.
+- Four mutations were checked. Widening the mask to multi-character tokens
+  dropped `94455` from an exact read at 0.77 to `"I'm four four five five"` at
+  confidence 0, because the model's mass split over spellings of the same code;
+  dropping `tighten` on a clip spoken with 500 ms gaps between digits returned
+  `544455` instead of `94455`, because a long pause read as the end of the
+  recording; dropping the lead-in on a clip with its leading silence stripped
+  lost the first digit; and the agreement factor scales confidence so a lone
+  reading at the same mean would fall below the floor, which is what makes a
+  thin transcript ask for another recording rather than guessing.
 
 The `prelude` fixture rules out a solve that clicks a page nobody read:
 

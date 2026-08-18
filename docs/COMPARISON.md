@@ -121,8 +121,11 @@ Proof: `lurien/tests/e2e_geo.sh`, `e2e_clock.sh`.
 
 ## Limits
 
-- `audio` is refused. It has primitives in the engine and no scorecard row, so the
-  solver names it rather than reporting a pass.
+- `audio` is claimed against a fixture that speaks a code and needs a local speech
+  model. The shipped `hcaptcha_audio` binding carries no `[audio]` table, because
+  what the audio task renders is minted per session, so a live widget is recognized
+  and then refused by name. A live row needs a binding that names the control, the
+  source, the answer field and the alphabet a real vendor uses.
 - `visual` is claimed against a fixture grid and needs a local object detector. The
   shipped vendor bindings for it carry no `[grid]` table, so a live hCaptcha,
   reCAPTCHA or Arkose grid is recognized and then refused by name. The measured

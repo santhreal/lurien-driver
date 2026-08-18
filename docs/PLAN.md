@@ -19,7 +19,7 @@ installed `lurien-browser` and says so when it is missing.
 | crates.io `guise` family | unified at `0.1.8` |
 | crates.io `captchaforge` | 36 versions yanked; `0.2.41` stays as the retirement notice |
 | challenge subsystem | `engine/additions/challenge/`, packaged, proven by `lurien/tests/e2e_challenge.sh` |
-| claimed kinds | `none`, `score`, `checkbox`, `pow`, `slider`, each with a dated scorecard row |
+| claimed kinds | `none`, `score`, `checkbox`, `visual`, `audio`, `pow`, `slider`, each with a dated scorecard row |
 | `pow` | solved in the browser: `Pow.sys.mjs` plus `PowWorker.js` lanes, no helper, proven by `lurien/tests/e2e_pow.sh` |
 | `slider` | measured by `lurien-vision` from the widget's own snapshot, dragged along a sampled profile, proven by `lurien/tests/e2e_slider.sh` |
 | the visit | `Prelude.sys.mjs` reads the page in the top document before any act, from a plan `guise` sampled, proven by `lurien/tests/e2e_prelude.sh` |
@@ -39,8 +39,9 @@ installed `lurien-browser` and says so when it is missing.
 | the network view | routes are applied on the channel in the parent, and one redaction rule serves the log, the HAR and the route view, proven by `lurien/tests/e2e_route.sh` and `lurien/tests/e2e_har.sh` |
 | a handle that means one context | a frame handle is minted once per browsing context and refused when the context is gone, proven by `lurien/tests/e2e_frames.sh` |
 | a grid answered by looking | a tile challenge is cropped in the widget's own context, read with a local object detector, and clicked by index with a dealt pace, proven by `lurien/tests/e2e_visual.sh` |
+| a recording answered by hearing | the control is pressed and the clip is fetched in the widget's own context, transcribed by a local Whisper export, and typed key by key, proven by `lurien/tests/e2e_audio.sh` |
 
-`lurien-driver` is not published while `audio` is still refused.
+`lurien-driver` is not published while `audio` has no mutation-gated scorecard row.
 
 ## 1. Names
 
@@ -298,7 +299,7 @@ a target, and the channels a token can arrive on. Kinds are a closed set in
 | `slider` | snapshot, measure, drag | the token arrives |
 | `pow` | worker lanes in the browser | the answer is accepted at its bound address |
 | `visual` | snapshot the grid, ask the vision helper, click each named tile | the token arrives. A binding with no `[grid]` table is refused by name |
-| `audio` | media, helper, type | not claimed |
+| `audio` | press play, fetch the clip in the widget's context, ask the helper to transcribe, type the answer | the token arrives. A reading under the floor asks for another recording. A binding with no `[audio]` table is refused by name |
 | `fail` | none | never. The classification itself is the refusal |
 
 `docs/KINDS.md` is the procedure for both extensions, and it names the law that
@@ -349,7 +350,7 @@ The rest are the upstream fingerprinting patches, which are inherited, not ours.
 
 Claimed means there is a fixture, a runnable script, and a dated row in
 `docs/bench-results/challenge-scorecard.md`. Today that is `none`, `score`,
-`checkbox`, `visual`, `slider`, `pow`.
+`checkbox`, `visual`, `audio`, `slider`, `pow`.
 
 `visual` is claimed against a fixture grid and needs an object detector on disk,
 which the vision helper loads on the first request and refuses by name without.
@@ -362,9 +363,12 @@ answer, and hCaptcha renders one canvas with counting and comparison tasks rathe
 than a tile grid. A live row for `visual` needs an open step and rounds in the
 binding, not another selector.
 
-Not claimed, and refused by name at runtime:
-
-- `audio`. Needs speech-to-text in a helper and a live row.
+`audio` is claimed against a fixture that speaks a code and needs a speech model
+on disk, which the vision helper loads on the first request and refuses by name
+without. The shipped `hcaptcha_audio` binding carries no `[audio]` table, because
+what the audio task renders is minted per session, so the widget is recognized and
+the solve is refused by name. A live row for `audio` needs a binding that names the
+control, the source, the answer field and the alphabet a real vendor uses.
 
 Not built:
 

@@ -33,6 +33,15 @@ tile to click it, so no coordinate crosses a process boundary. The helper needs 
 object detector on disk and refuses the request by name without one, which
 `docs/HELPERS.md` describes.
 
+An `audio` challenge is answered from its recording. The control that plays it is
+pressed in the widget's own browsing context, the clip is fetched there with the
+widget's own cookies and origin, and only base64 crosses to the helper: perception
+keeps no network and the vendor never sees a second client. The helper transcribes
+it under the alphabet the binding declared, and a reading below the floor is not
+typed: the reload control is pressed for another recording, up to three. The helper
+needs a speech model on disk and refuses the request by name without one, which
+`docs/HELPERS.md` describes.
+
 ## Add a vendor
 
 1. Copy `captcha/kinds/_schema.toml` fields into `captcha/kinds/<vendor>.toml`.
@@ -44,10 +53,13 @@ object detector on disk and refuses the request by name without one, which
    posted to the page, `detail.token`). Name every channel the vendor uses; one is
    enough to load the binding.
    A `slider` also names `handle`: the element a hand grabs, which is not the
-   element being measured. A `pow` also carries a `[work]` table, and a `visual` a
-   `[grid]` table naming the question, the tiles, and the submit control. A
-   `visual` binding with no `[grid]` table is still recognized and then refused by
-   name, rather than bound to guessed class names.
+   element being measured. A `pow` also carries a `[work]` table, a `visual` a
+   `[grid]` table naming the question, the tiles, and the submit control, and an
+   `audio` an `[audio]` table naming the control that plays the recording, the
+   element that holds it, the field the answer is typed into, an optional confirm
+   and reload control, and the characters the answer is spelled with. A `visual`
+   binding with no `[grid]` table or an `audio` binding with no `[audio]` table is
+   still recognized and then refused by name, rather than bound to guessed selectors.
    A target on a kind this build claims must be a form the engine resolves:
    `first checkbox in this BC`, `first canvas in this BC`,
    `first draggable in this BC`, `role:<name>`, or a CSS selector. Prose is for a
