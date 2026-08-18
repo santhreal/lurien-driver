@@ -43,7 +43,7 @@
 - A kind is claimed only when the scorecard carries a dated row for it. An unclaimed kind
   is refused with a typed error rather than reported as a pass, and two tests enforce the
   scorecard against the claimed set. Claimed: `none`, `score`, `checkbox`, `visual`,
-  `pow`, `slider`.
+  `audio`, `pow`, `slider`.
 - `visual` is claimed. A tile grid is read in the widget's own browsing context, which
   scrolls it into view and reports the box it landed in together with one rectangle
   per tile; the parent crops exactly that box, asks `lurien-vision` which tiles match
@@ -61,6 +61,21 @@
   are paced from a dealt `grid_deck` entry named in the row, and a binding with no
   `[grid]` table is recognized and then refused rather than aimed at guessed selectors.
   The helper protocol is 2.
+- `audio` is claimed. The control that plays the recording is pressed in the widget's
+  own browsing context, the clip is fetched there with the widget's own cookies and
+  origin, and only base64 crosses to `lurien-vision`, so perception still has no
+  network and the vendor never sees a second client. The transcript is typed key by
+  key with the session's own keystroke rhythm into the field the binding names, and
+  the answer field is cleared first so a second attempt does not type over the first.
+  Four decisions make a code legible: the decode is masked to one token per character
+  of the binding's `alphabet`, any silence past 150 ms is shortened because a long
+  pause reads as the end of the recording, the clip is framed with lead and tail
+  silence over a floor of room tone, and it is read three times at three speeds with
+  the agreement folded into one confidence. A reading under the floor is not typed:
+  the widget's reload control is pressed for another recording, up to three, and every
+  reading is recorded in the evidence row. The speech model is a local Whisper ONNX
+  export the helper loads on first use and never downloads; without one the request is
+  refused by name. A binding with no `[audio]` table is recognized and then refused.
 - A page the engine drove and could not clear is `ChallengeRefused`, carrying the
   engine's own reason, and `hard captcha` is now only for a widget the engine
   reported nothing about. The old message sent every failure to the scorecard to

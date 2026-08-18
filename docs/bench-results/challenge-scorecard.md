@@ -29,19 +29,21 @@ and the row rewritten. A proof belongs to a build, not to a feature.
 | `visual` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 16 questions over 8 visits, every set exact: 2 to 4 tiles of 9 named, clicked and accepted, one run 3 tiles for "Select all images with a red circle" in 13799 ms, `via: field`; a question the grid does not answer was refused with every tile's score | `lurien/tests/e2e_visual.sh`; the target shape and the matching tiles are minted per load, the widget accepts only trusted clicks in its own context, and the exact set must match. A helper started with no model refuses by name rather than guessing. `captcha/vision/tests/grid_detection.rs` answers the same geometry offline, including the tile-sized boxes a bordered tile produces |
 | `pow` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | 4 hex zeros cleared in 143 hashes across 7 lanes, typed and accepted, whole page 9689 ms, `via: field` | `lurien/tests/e2e_pow.sh`; the page mints a fresh challenge and a random difficulty per load and accepts only a digest it verified itself, typed key by key with trusted events. `lurien/tests/pow_sha256.mjs` pins the worker digest against a reference implementation |
 | `slider` | fixture | 2026-08-17 | 150.0.2-beta.25 | 0.1.0 | notch measured from pixels, 259 px travel dragged in 20 moves, accepted, whole page 4791 ms, `via: field` | `lurien/tests/e2e_slider.sh`; the notch moves every load, the widget refuses a travel with fewer than eight moves, one step size, no correction, or under 80 ms, and the same run with an evenly spaced profile is refused. `captcha/vision/tests/real_crop.rs` pins the measurement against a crop the browser rendered |
+| `audio` | fixture | 2026-08-18 | 150.0.2-beta.25 | 0.1.0 | spoken code heard and typed, accepted, whole page 19167 ms, `via: field`; a recording with no speech under the same noise was refused after three recordings with nothing typed | `lurien/tests/e2e_audio.sh`; the code is minted per load, spoken by the host's synthesizer under hiss, hum and a second speaker, and the page holds only its SHA-256, so the answer is nowhere in the DOM. The clip appears only after a trusted press and the answer is accepted only when typed key by key. `captcha/vision/tests/audio_transcription.rs` reads the same recipe offline |
 | `fail` | n/a | 2026-08-16 | 150.0.2-beta.25 | 0.1.0 | typed error, no fabricated token | `tests/verb_fail_closed.rs` |
 
 ## Not claimed
 
-`audio` has primitives in the engine and no row here, so the solver refuses it:
+Every closed kind now carries a row above. A kind that is added to
+`Kinds.sys.mjs` and not proved belongs here, and until it is proved the solver
+refuses it by name:
 
 ```
-kind audio is not claimed by this build; it is refused rather than reported as a pass
+kind <name> is not claimed by this build; it is refused rather than reported as a pass
 ```
 
-It needs a local helper (`HelperSock`) plus a row above before it will run. The
-refusal is deliberate: a solver that reports success on a kind it cannot finish
-teaches its caller to trust a number that means nothing.
+The refusal is deliberate: a solver that reports success on a kind it cannot
+finish teaches its caller to trust a number that means nothing.
 
 ## What the fixtures rule out
 
@@ -166,6 +168,30 @@ What the `visual` row does not cover, measured against two live deployments on
   answers the first round of a challenge that has three, or that reads a canvas as
   if it were tiles, produces a confident wrong set on a live page, which is worse
   than a refusal that names the widget.
+
+The `audio` fixture rules out an answer that was read rather than heard:
+
+- The digits are minted per load by the fixture server and never sent to the page.
+  The page carries `sha256(code)` and grades the typed answer with WebCrypto, so
+  there is no attribute, script or hidden field holding the answer, and the second
+  phase requires a different code on a second visit.
+- The recording is synthesized per nonce, so nothing is committed and a clip cannot
+  be recognized by its bytes or its file name. It carries hiss, 120 Hz mains hum and
+  a second speaker rumbling under the first, at levels chosen so an unconstrained
+  transcript of the clean clip still reads the digits: the solver has to overcome the
+  noise, not a synthesizer that cannot say a digit.
+- The clip has no source until the play control is pressed, and the press must be
+  trusted. A solver that skips the control has nothing to fetch.
+- The bytes are fetched in the widget's own browsing context, which the parent
+  cannot reach, and reach the helper as base64. The helper has no network, so no
+  second client asks the vendor for the challenge.
+- The answer must arrive as keystrokes: at least one trusted keydown and keyup per
+  character, no two of them closer than 20 ms. An assigned value or a pasted answer
+  writes no token.
+- The third phase serves the same noise with no speech under it. The run has to end
+  with nothing typed and a refusal naming the floor it applied, which is what rules
+  out a solver that types its best guess. The fourth starts the helper with no
+  speech model and requires a refusal naming the model it was not given.
 
 The `prelude` fixture rules out a solve that clicks a page nobody read:
 

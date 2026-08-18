@@ -683,21 +683,24 @@ fn every_test_the_kind_guide_names_is_a_test_in_this_tree() {
     );
 }
 
-/// Keys a `[grid]` table may name, read from `_schema.toml` at run time.
-fn grid_keys() -> Vec<String> {
+/// Keys one documented table may name, read from `_schema.toml` at run time.
+///
+/// The schema documents one table per comment block, and each block opens with the
+/// sentence naming the kind that carries it. The scan stops at the next such
+/// sentence, so a key documented for one table is not silently legal in another:
+/// with two tables in the file, a scan that ran to a fixed later heading would
+/// accept `alphabet` as a grid key.
+fn table_keys(intro: &str) -> Vec<String> {
     let raw = fs::read_to_string(kinds_dir().join("_schema.toml")).expect("_schema.toml");
     let mut keys = Vec::new();
     let mut inside = false;
     for line in raw.lines() {
         let text = line.trim_start_matches('#').trim();
-        if text.starts_with("A `visual` binding also carries a [grid] table") {
-            inside = true;
-            continue;
-        }
         if !inside {
+            inside = text.starts_with(intro);
             continue;
         }
-        if text.starts_with("A `pow` binding") {
+        if text.starts_with("A `") || text.starts_with("An `") {
             break;
         }
         // A key line is indented exactly one step past the comment marker and
@@ -719,6 +722,16 @@ fn grid_keys() -> Vec<String> {
     keys
 }
 
+/// Keys a `[grid]` table may name.
+fn grid_keys() -> Vec<String> {
+    table_keys("A `visual` binding also carries a [grid] table")
+}
+
+/// Keys an `[audio]` table may name.
+fn audio_keys() -> Vec<String> {
+    table_keys("An `audio` binding also carries an [audio] table")
+}
+
 /// A tile grid is answered from its `[grid]` table, so a table that names a key no
 /// primitive reads is a binding that would be attempted and then miss the tiles.
 /// The keys live in `_schema.toml` and are read from there, so adding one there is
@@ -729,6 +742,12 @@ fn every_grid_table_names_only_keys_the_engine_reads() {
     assert!(
         keys.contains(&"prompt".to_string()) && keys.contains(&"cell".to_string()),
         "the schema stopped documenting the two keys a grid cannot be read without: {keys:?}"
+    );
+    // The block boundary itself: `alphabet` belongs to the [audio] table, and a
+    // scan that ran past the end of the grid block would make it a legal grid key.
+    assert!(
+        !keys.contains(&"alphabet".to_string()),
+        "the grid block's keys now include another table's: {keys:?}"
     );
     for binding in lurien::catalog::CATALOG {
         for (key, _) in binding.grid {
@@ -775,6 +794,70 @@ fn a_visual_binding_with_no_grid_table_is_refused_by_name() {
     assert!(
         !unbound.is_empty(),
         "every visual binding now carries a grid table, so this law has nothing left to guard \
+         and each of them needs a scorecard row instead"
+    );
+}
+
+/// An audio challenge is answered from its `[audio]` table, so a table naming a key
+/// no primitive reads is a binding that would press a control that is not there.
+/// The keys live in `_schema.toml` and are read from there.
+#[test]
+fn every_audio_table_names_only_keys_the_engine_reads() {
+    let keys = audio_keys();
+    assert!(
+        keys.contains(&"source".to_string()) && keys.contains(&"answer".to_string()),
+        "the schema stopped documenting the two keys an audio challenge cannot be answered \
+         without: {keys:?}"
+    );
+    assert!(
+        !keys.contains(&"cell".to_string()),
+        "the audio block's keys now include another table's: {keys:?}"
+    );
+    for binding in lurien::catalog::CATALOG {
+        for (key, _) in binding.audio {
+            assert!(
+                keys.contains(&(*key).to_string()),
+                "{} names the audio key {key}, which no primitive reads",
+                binding.name
+            );
+        }
+        if binding.audio.iter().any(|(key, _)| *key == "source") {
+            assert!(
+                binding.audio.iter().any(|(key, _)| *key == "answer"),
+                "{} names a recording and no field to type into, so it cannot be answered",
+                binding.name
+            );
+        }
+    }
+}
+
+/// The same law as the grid one, for the kind whose answer is heard.
+///
+/// `audio` is claimed, and the vendor bindings for it carry no `[audio]` table
+/// because the controls inside those widgets are minted per session. The solver has
+/// to say so: the widget is recognized, its recording cannot be reached. A branch
+/// that pressed an empty selector instead would report a timeout, which reads as a
+/// broken engine rather than as a binding nobody finished.
+#[test]
+fn an_audio_binding_with_no_audio_table_is_refused_by_name() {
+    let solver = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../engine/additions/challenge/Solver.sys.mjs");
+    let Ok(raw) = fs::read_to_string(&solver) else {
+        println!("SKIP: no browser checkout at {}", solver.display());
+        return;
+    };
+    assert!(
+        raw.contains("this binding carries no audio table naming a source and an answer field"),
+        "the audio branch no longer refuses a binding with no audio table by name"
+    );
+    let unbound: Vec<&str> = lurien::catalog::CATALOG
+        .iter()
+        .filter(|binding| binding.kind == "audio" && binding.audio.is_empty())
+        .map(|binding| binding.name)
+        .collect();
+    assert!(
+        !unbound.is_empty(),
+        "every audio binding now carries an audio table, so this law has nothing left to guard \
          and each of them needs a scorecard row instead"
     );
 }

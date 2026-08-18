@@ -30,8 +30,9 @@ pub const CONFIG_ENV: &str = "LURIEN_CHALLENGE";
 /// typed error rather than reported as a pass. An interactive kind joins this
 /// list only with a dated scorecard row against a live vendor page, which
 /// `tests/kinds_registry.rs` enforces.
-pub const CLAIMED_KINDS: &[&str] =
-    &["none", "score", "checkbox", "visual", "pow", "slider", "fail"];
+pub const CLAIMED_KINDS: &[&str] = &[
+    "none", "score", "checkbox", "visual", "audio", "pow", "slider", "fail",
+];
 
 /// Schema version of every row the engine appends to the evidence file, and the
 /// only version this build reads.
@@ -66,6 +67,10 @@ const KIND_BUDGET_MS: &[(&str, u64)] = &[
     ("visual", 30_000),
     ("slider", 15_000),
     ("pow", 45_000),
+    // The most expensive kind in the set: up to three recordings, each pressed for,
+    // fetched, and read three times at three speeds, with an answer typed at a
+    // hand's pace and a token waited for after every one of them.
+    ("audio", 60_000),
 ];
 
 /// How long the first sighting of a page waits for the page's other contexts
