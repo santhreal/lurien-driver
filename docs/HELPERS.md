@@ -1,9 +1,9 @@
 # Helper protocol
 
-A helper is a local process that answers one perception question. The browser
-sends a crop and gets back a measurement or a set of matching cells. It is a
-separate process because a vision model does not belong in `libxul`, and because a
-process that only ever sees a crop cannot leak a session.
+A helper is a local process that answers one perception question. The browser sends
+a crop or a recording and gets back a measurement, a set of matching cells, or a
+transcript. It is a separate process because a vision model does not belong in
+`libxul`, and because a process that only ever sees a crop cannot leak a session.
 
 `lurien-vision` is the helper that ships with this tree. Any process in any
 language can take its place by speaking this protocol.
@@ -88,16 +88,34 @@ laid out:
 }
 ```
 
+An audio request carries the recording itself and the characters the answer is
+spelled with:
+
+```json
+{
+  "v": 2,
+  "token": "6f1c9a4b…",
+  "kind": "audio",
+  "task": "transcribe",
+  "audio": "<base64 clip>",
+  "mime": "audio/mpeg",
+  "alphabet": "0123456789"
+}
+```
+
 | Field | Meaning |
 |---|---|
 | `v` | protocol version, `2` |
 | `token` | this session's helper token |
-| `kind` | challenge kind. `lurien-vision` answers `slider` and `visual` |
-| `task` | task within the kind: `axis` for a slider, `cells` for a grid |
+| `kind` | challenge kind. `lurien-vision` answers `slider`, `visual` and `audio` |
+| `task` | task within the kind: `axis` for a slider, `cells` for a grid, `transcribe` for a clip |
 | `png` | the crop, PNG, standard base64 |
 | `width`, `height` | crop size in CSS pixels, which differs from the PNG size when the snapshot was taken at a scale |
 | `prompt` | the widget's own question text. Grid only |
 | `cells` | cell rectangles in crop coordinates, in the browser's own order. Grid only |
+| `audio` | the recording, as the widget's own context fetched it, standard base64. Audio only |
+| `mime` | what the widget said the container is, as a hint for the probe. Audio only |
+| `alphabet` | characters the answer may be spelled with. Empty means an unmasked transcript. Audio only |
 
 The request carries no URL, no cookies, no page and no session. That is the whole
 security argument for running perception outside the browser, and it holds only
@@ -116,6 +134,7 @@ zero:
 {"dx":149.0,"dy":0.0,"confidence":494.2}
 {"cells":[0,4,7],"scores":[0.91,0.03,0.02,0.88,0.71],"confidence":0.71}
 {"cells":[],"scores":[0.04,0.02,0.11],"confidence":0.0}
+{"text":"47291","raw":"47291","heard":["47291","47291","47291"],"agreement":3,"confidence":0.98}
 {"error":"png: the crop holds no puzzle edge pair"}
 ```
 
@@ -125,7 +144,11 @@ zero:
 | `dy` | travel across the axis, `0` for a slider |
 | `cells` | indices into the request's `cells` that match the prompt |
 | `scores` | one score per cell, in the request's order, for a caller that logs the near misses |
-| `confidence` | the answer's own score: the measurement for an axis, the weakest chosen cell's share for a grid |
+| `text` | the transcript, in the alphabet the request named |
+| `raw` | what the model emitted before the alphabet was applied |
+| `heard` | every reading of the clip, so a caller can see what a thin transcript was made of |
+| `agreement` | how many readings agreed on `text` |
+| `confidence` | the answer's own score: the measurement for an axis, the weakest chosen cell's share for a grid, the transcript's own probability folded with its agreement |
 | `error` | why there is no answer |
 
 An empty `cells` is an answer, not a failure: the grid held nothing the prompt
@@ -171,6 +194,50 @@ Asking what a tile is a picture of is the wrong question. A tile holding a car a
 the end of a street is mostly street, and on a live 3x3 grid whose answer was tiles
 2, 4 and 7, whole-tile captioning picked 2, 4 and 6. The detector returned six
 boxes on the same crop, all of them inside 2, 4 and 7.
+
+## The speech model
+
+A recording is transcribed, which needs weights of its own. `lurien-vision` reads a
+Whisper ONNX export: one directory holding `encoder_model.onnx`,
+`decoder_model.onnx` and `tokenizer.json`. The export it is measured against is
+`whisper-small.en`.
+
+```
+lurien-vision --port 0 --token 6f1c… --audio ~/.cache/lurien/audio/whisper-small.en
+```
+
+`LURIEN_AUDIO_MODEL` names the same directory. As with the detector the load is
+lazy, the weights are not in this tree, and the helper never fetches them:
+
+```json
+{"error":"this helper was started without a speech model, so a clip is refused rather than guessed; pass --audio DIR or set LURIEN_AUDIO_MODEL"}
+```
+
+The clip is decoded from its container, mixed to one channel and resampled to
+16 kHz, and then four things happen that a plain transcript does not do:
+
+- **The alphabet is one token per character.** With `alphabet` set, the decode is
+  masked to the tokens that spell exactly one of its characters, plus end of text.
+  Allowing the model's multi-character tokens splits its probability over spellings
+  of the same code: the same clips went from truncated answers around 0.5 to exact
+  answers at 0.89 to 0.99. A widget whose answer is a word declares no alphabet.
+- **Long pauses are shortened.** Any silence past 150 ms is cut back to it, keeping
+  the head of each pause. A vendor spaces its characters further apart than speech,
+  and a long pause reads as the end of the recording: an untouched clip came back as
+  its first digit alone.
+- **The clip is framed.** Half a second of lead, a quarter second of tail, and room
+  tone at 0.002 of full scale mixed under the whole thing. Without the lead the
+  first character is dropped, and with exact zeros between characters two of the
+  same character merge into one.
+- **It is read three times.** At rate, a tenth faster and a tenth slower. The most
+  common reading wins, and how many readings agreed scales its probability into the
+  one `confidence` a caller compares against a floor: `0.7` where one reading stands
+  alone, `0.9` for two of three, `1.0` for three. A caller carries one floor instead
+  of two numbers and a rule.
+
+A decode stops at end of text, at 24 tokens, or at four repeats of one token, which
+is what a model looping on noise does. The caller sees every reading in `heard`, so
+a refusal is inspectable rather than a number.
 
 ## Configuring the browser
 
