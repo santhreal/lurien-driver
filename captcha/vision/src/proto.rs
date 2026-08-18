@@ -26,9 +26,10 @@ pub struct Request {
     /// This session's helper token, minted by whoever started both processes.
     #[serde(default)]
     pub token: String,
-    /// Challenge kind. `slider` and `visual` are answered here.
+    /// Challenge kind. `slider`, `visual` and `audio` are answered here.
     pub kind: String,
-    /// Task within the kind: `axis` for a slider, `cells` for a grid.
+    /// Task within the kind: `axis` for a slider, `cells` for a grid,
+    /// `transcribe` for a clip.
     pub task: String,
     /// The crop, PNG, base64.
     #[serde(default)]
@@ -49,11 +50,24 @@ pub struct Request {
     /// browser clicks its own rectangles rather than coordinates from a helper.
     #[serde(default)]
     pub cells: Vec<crate::grid::Cell>,
+    /// The clip, as the widget's own context fetched it, base64.
+    ///
+    /// Bytes, not a URL: this process has no network and no session, and a helper
+    /// that fetched a challenge itself would be a second client the vendor can see.
+    #[serde(default)]
+    pub audio: String,
+    /// What the widget said the clip is, as a hint for the container probe.
+    #[serde(default)]
+    pub mime: String,
+    /// Characters the answer may be spelled with, from the binding. Empty means an
+    /// unmasked transcript.
+    #[serde(default)]
+    pub alphabet: String,
 }
 
 /// What the helper answers. An answer carries one kind's result or an error,
 /// never both, and never a silent zero.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
 pub struct Reply {
     /// Slider travel along x, in the caller's own pixels.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,7 +75,7 @@ pub struct Reply {
     /// Slider travel along y, which is zero for every slider seen so far.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dy: Option<f64>,
-    /// How sure the measurement or the weakest chosen cell is.
+    /// How sure the measurement, the weakest chosen cell, or the transcript is.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f32>,
     /// Indices into the request's cell list, in grid order. An empty list is an
@@ -72,6 +86,19 @@ pub struct Reply {
     /// thin margin was made of.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scores: Option<Vec<f32>>,
+    /// The answer to type, in the alphabet the request named.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// What the model emitted before the alphabet was applied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
+    /// Every reading of the clip, so a caller can see what a thin transcript was
+    /// made of rather than only that it was refused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heard: Option<Vec<String>>,
+    /// How many readings agreed on `text`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agreement: Option<usize>,
     /// Why there is no answer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -85,9 +112,7 @@ impl Reply {
             dx: Some(dx),
             dy: Some(0.0),
             confidence: Some(confidence),
-            cells: None,
-            scores: None,
-            error: None,
+            ..Self::default()
         }
     }
 
@@ -99,12 +124,23 @@ impl Reply {
             .filter_map(|index| scores.get(*index).copied())
             .fold(f32::INFINITY, f32::min);
         Self {
-            dx: None,
-            dy: None,
             confidence: confidence.is_finite().then_some(confidence),
             cells: Some(cells),
             scores: Some(scores),
-            error: None,
+            ..Self::default()
+        }
+    }
+
+    /// What a clip said, with the readings it was voted from.
+    #[must_use]
+    pub fn transcript(heard: crate::asr::Transcript) -> Self {
+        Self {
+            confidence: Some(heard.confidence),
+            text: Some(heard.text),
+            raw: Some(heard.raw),
+            heard: Some(heard.heard),
+            agreement: Some(heard.agreement),
+            ..Self::default()
         }
     }
 
@@ -112,12 +148,8 @@ impl Reply {
     #[must_use]
     pub fn refused(reason: impl Into<String>) -> Self {
         Self {
-            dx: None,
-            dy: None,
-            confidence: None,
-            cells: None,
-            scores: None,
             error: Some(reason.into()),
+            ..Self::default()
         }
     }
 }

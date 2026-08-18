@@ -150,7 +150,7 @@ mod tests {
         let listener = bind("127.0.0.1:0".parse().expect("addr")).expect("bind");
         let port = listener.local_addr().expect("addr").port();
         std::thread::spawn(move || {
-            let mut helper = crate::Helper::new(None);
+            let mut helper = crate::Helper::new(None, None);
             serve(&listener, token, &mut helper);
         });
         port

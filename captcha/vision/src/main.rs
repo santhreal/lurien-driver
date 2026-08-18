@@ -13,14 +13,16 @@ use std::process::ExitCode;
 const TOKEN_ENV: &str = "LURIEN_HELPER_TOKEN";
 
 fn usage() -> String {
-    "usage: lurien-vision --token T [--host 127.0.0.1] [--port N] [--model DIR]\n\
+    "usage: lurien-vision --token T [--host 127.0.0.1] [--port N] [--model DIR] [--audio DIR]\n\
      \n\
      Answers one JSON request per connection.\n\
      slider: {kind:\"slider\", task:\"axis\", png, width} -> {dx, dy, confidence}.\n\
      grid:   {kind:\"visual\", task:\"cells\", png, width, prompt, cells} -> {cells, scores}.\n\
+     audio:  {kind:\"audio\", task:\"transcribe\", audio, mime, alphabet} -> {text, confidence}.\n\
      \n\
-     A grid needs an object detector: --model DIR, or LURIEN_VISION_MODEL. Without\n\
-     one, grids are refused by name and sliders are still measured.\n\
+     A grid needs an object detector: --model DIR, or LURIEN_VISION_MODEL. A clip\n\
+     needs a speech model: --audio DIR, or LURIEN_AUDIO_MODEL. Without one, that\n\
+     kind is refused by name and sliders are still measured.\n\
      Loopback only, and every request must name this session's token;\n\
      LURIEN_HELPER_TOKEN sets it without a command line.\n\
      See docs/HELPERS.md for the protocol."
@@ -32,6 +34,7 @@ fn main() -> ExitCode {
     let mut port = 0u16;
     let mut token = std::env::var(TOKEN_ENV).unwrap_or_default();
     let mut model = lurien_vision::detect::model_dir_from_env();
+    let mut audio = lurien_vision::asr::model_dir_from_env();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -53,6 +56,13 @@ fn main() -> ExitCode {
                 Some(value) => model = Some(PathBuf::from(value)),
                 None => {
                     eprintln!("--model needs a directory\n{}", usage());
+                    return ExitCode::from(2);
+                }
+            },
+            "--audio" => match args.next() {
+                Some(value) => audio = Some(PathBuf::from(value)),
+                None => {
+                    eprintln!("--audio needs a directory\n{}", usage());
                     return ExitCode::from(2);
                 }
             },
@@ -103,18 +113,19 @@ fn main() -> ExitCode {
         }
     };
     // One line, parseable, so a script can start the helper and read its port.
-    // It also names whether this helper can answer a grid: a session
-    // that reads "model":null and then waits on a grid solve is waiting for a
-    // refusal.
-    let model_line = match &model {
+    // It also names which kinds this helper can answer: a session that reads
+    // "model":null and then waits on a grid solve is waiting for a refusal.
+    let named = |dir: &Option<PathBuf>| match dir {
         Some(dir) => format!("\"{}\"", dir.display()),
         None => "null".to_string(),
     };
     println!(
-        "{{\"listening\":\"{bound}\",\"port\":{},\"model\":{model_line}}}",
-        bound.port()
+        "{{\"listening\":\"{bound}\",\"port\":{},\"model\":{},\"audio\":{}}}",
+        bound.port(),
+        named(&model),
+        named(&audio)
     );
-    let mut helper = lurien_vision::Helper::new(model);
+    let mut helper = lurien_vision::Helper::new(model, audio);
     lurien_vision::server::serve(&listener, &token, &mut helper);
     ExitCode::SUCCESS
 }

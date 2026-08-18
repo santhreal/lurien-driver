@@ -1,20 +1,25 @@
-//! The perception helper: one crop in, one answer out.
+//! The perception helper: one crop or one clip in, one answer out.
 //!
-//! The engine snapshots the widget's own browsing context, sends the crop here,
-//! and applies the answer through the trusted input path. This process sees a few
-//! hundred pixels and nothing else, which is why it is a process: perception does
-//! not belong in libxul, and a model that cannot see a session cannot leak one.
+//! The engine snapshots the widget's own browsing context, or fetches the clip the
+//! widget itself was told to play, and sends it here. This process sees a few
+//! hundred pixels or a few seconds of sound and nothing else, which is why it is a
+//! process: perception does not belong in libxul, and a model that cannot see a
+//! session cannot leak one. It has no network, so a challenge is never fetched
+//! twice from two clients.
 //!
-//! Two kinds are answered. A slider is measured, which is arithmetic over a crop
-//! and needs no weights. A grid is detected, which needs a model, so a helper
-//! started without one refuses grid requests by name and still measures sliders.
+//! Three kinds are answered. A slider is measured, which is arithmetic over a crop
+//! and needs no weights. A grid is detected and a clip is transcribed, which each
+//! need a model, so a helper started without one refuses those requests by name and
+//! still measures sliders.
 
+pub mod asr;
 pub mod detect;
 pub mod gap;
 pub mod grid;
 pub mod pixels;
 pub mod proto;
 pub mod server;
+pub mod sound;
 
 use std::path::{Path, PathBuf};
 
@@ -72,35 +77,49 @@ pub fn decode_png(bytes: &[u8]) -> Result<Gray, String> {
 /// is a widget that was not fully on screen.
 const EDGE: i64 = 1;
 
-/// The helper's state: a model, once something asks for one.
+/// The helper's state: the models, once something asks for one.
 ///
-/// The weights are hundreds of megabytes and take seconds to open, so they are
-/// loaded on the first grid request and kept. A session that only ever measures
-/// sliders never pays for them, and a session whose model directory is wrong finds
-/// out on the request that needed it, with the path in the refusal.
+/// Weights are hundreds of megabytes and take seconds to open, so each is loaded on
+/// the first request that needs it and kept. A session that only ever measures
+/// sliders never pays for either, a session that only solves grids never opens a
+/// speech model, and a session whose model directory is wrong finds out on the
+/// request that needed it, with the path in the refusal.
 pub struct Helper {
     model_dir: Option<PathBuf>,
     detector: Option<detect::Detector>,
     /// The load failure, kept so a second request does not spend another few
     /// seconds proving the same directory is still not a model.
     refused: Option<String>,
+    audio_dir: Option<PathBuf>,
+    listener: Option<asr::Listener>,
+    deaf: Option<String>,
 }
 
 impl Helper {
-    /// A helper that will look for a model in `model_dir` when a grid arrives.
+    /// A helper that will look for a detector in `model_dir` when a grid arrives and
+    /// for a speech model in `audio_dir` when a clip does.
     #[must_use]
-    pub fn new(model_dir: Option<PathBuf>) -> Self {
+    pub fn new(model_dir: Option<PathBuf>, audio_dir: Option<PathBuf>) -> Self {
         Self {
             model_dir,
             detector: None,
             refused: None,
+            audio_dir,
+            listener: None,
+            deaf: None,
         }
     }
 
-    /// The model directory this helper was given, if any.
+    /// The detector directory this helper was given, if any.
     #[must_use]
     pub fn model_dir(&self) -> Option<&Path> {
         self.model_dir.as_deref()
+    }
+
+    /// The speech model directory this helper was given, if any.
+    #[must_use]
+    pub fn audio_dir(&self) -> Option<&Path> {
+        self.audio_dir.as_deref()
     }
 
     /// Answer one request.
@@ -109,13 +128,49 @@ impl Helper {
         match (request.kind.as_str(), request.task.as_str()) {
             ("slider", "axis") => slider(request),
             ("visual", "cells") => self.cells(request),
-            ("slider" | "visual", task) => proto::Reply::refused(format!(
-                "unknown task {task} for kind {}; slider takes axis and visual takes cells",
+            ("audio", "transcribe") => self.transcribe(request),
+            ("slider" | "visual" | "audio", task) => proto::Reply::refused(format!(
+                "unknown task {task} for kind {}; slider takes axis, visual takes cells \
+                 and audio takes transcribe",
                 request.kind
             )),
             (kind, _) => proto::Reply::refused(format!(
-                "this helper answers the slider and visual kinds, not {kind}"
+                "this helper answers the slider, visual and audio kinds, not {kind}"
             )),
+        }
+    }
+
+    /// What a clip says, in the alphabet the binding named.
+    fn transcribe(&mut self, request: &proto::Request) -> proto::Reply {
+        if request.audio.is_empty() {
+            return proto::Reply::refused(
+                "the request carries no clip; the widget's own context owns the audio and \
+                 has to fetch the bytes it was told to play",
+            );
+        }
+        let bytes = match proto::base64_decode(&request.audio) {
+            Ok(bytes) => bytes,
+            Err(e) => return proto::Reply::refused(e),
+        };
+        // The container is read before a model is opened: bytes that are a page
+        // rather than a clip are a binding or a session problem, and proving that
+        // costs no weights.
+        let clip = match sound::decode(&bytes, &request.mime) {
+            Ok(clip) => clip,
+            Err(e) => return proto::Reply::refused(e),
+        };
+        let samples = sound::at_model_rate(&clip);
+        let listener = match self.listener() {
+            Ok(listener) => listener,
+            Err(e) => return proto::Reply::refused(e),
+        };
+        match listener.hear(&samples, &request.alphabet) {
+            Ok(heard) if heard.text.is_empty() => proto::Reply::refused(format!(
+                "no reading of the clip spelled anything in {:?}: readings {:?}",
+                request.alphabet, heard.heard
+            )),
+            Ok(heard) => proto::Reply::transcript(heard),
+            Err(e) => proto::Reply::refused(e),
         }
     }
 
@@ -222,6 +277,32 @@ impl Helper {
         }
         Ok(self.detector.as_mut().expect("just loaded"))
     }
+
+    /// The speech model, loading it the first time it is needed.
+    fn listener(&mut self) -> Result<&mut asr::Listener, String> {
+        if let Some(reason) = &self.deaf {
+            return Err(reason.clone());
+        }
+        if self.listener.is_none() {
+            let Some(dir) = self.audio_dir.clone() else {
+                let reason = format!(
+                    "this helper was started without a speech model, so a clip is refused \
+                     rather than guessed; pass --audio DIR or set {}",
+                    asr::MODEL_ENV
+                );
+                self.deaf = Some(reason.clone());
+                return Err(reason);
+            };
+            match asr::Listener::load(&dir) {
+                Ok(model) => self.listener = Some(model),
+                Err(e) => {
+                    self.deaf = Some(e.clone());
+                    return Err(e);
+                }
+            }
+        }
+        Ok(self.listener.as_mut().expect("just loaded"))
+    }
 }
 
 /// Measure a slider crop.
@@ -309,7 +390,7 @@ mod tests {
     /// A helper with no model: every test here measures a slider, which needs no
     /// weights, and the grid refusals are about what happens without them.
     fn helper() -> Helper {
-        Helper::new(None)
+        Helper::new(None, None)
     }
 
     fn request(image: &Gray, width: f64) -> proto::Request {

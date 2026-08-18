@@ -29,3 +29,10 @@ ort = { version = "2.0.0-rc.12", default-features = false, features = [
 # byte-pair encoder that disagrees with the weights' vocabulary embeds a
 # different sentence than the one the widget asked.
 tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+# The FFT behind the log-mel front end. The window, the filterbank and the
+# scaling are written out in sound.rs because they have to match the export's own
+# preprocessing exactly; only the transform itself is borrowed.
+rustfft = "6"
+# Container and codec reading for what a vendor serves: WAV from a fixture, MP3
+# from a live widget. Decoding compressed audio by hand is a decade of edge cases.
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "wav", "pcm", "isomp4"] }
