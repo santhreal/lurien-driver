@@ -201,12 +201,14 @@ The `audio` fixture rules out an answer that was read rather than heard:
 - Four mutations were checked. Widening the mask to multi-character tokens
   dropped `94455` from an exact read at 0.77 to `"I'm four four five five"` at
   confidence 0, because the model's mass split over spellings of the same code;
-  dropping `tighten` on a clip spoken with 500 ms gaps between digits returned
-  `544455` instead of `94455`, because a long pause read as the end of the
-  recording; dropping the lead-in on a clip with its leading silence stripped
-  lost the first digit; and the agreement factor scales confidence so a lone
-  reading at the same mean would fall below the floor, which is what makes a
-  thin transcript ask for another recording rather than guessing.
+  dropping `framed` on a clip spoken with a 5 ms gap lost the first digit
+  (`94455` to `4455` at 0.72, agreement 2), because exact zeros between repeated
+  digits merged them without room tone; dropping `tighten` on a clip with 200 ms
+  gaps lowered confidence by 0.04 (0.98 to 0.94), marginal rather than
+  catastrophic on this model and recorded as such; and the agreement factor
+  scales confidence so a lone reading at the same mean would fall below the
+  floor, which is what makes a thin transcript ask for another recording rather
+  than guessing.
 
 The `prelude` fixture rules out a solve that clicks a page nobody read:
 
