@@ -260,6 +260,31 @@ fn a_scalar_sent_as_json_reaches_the_verb() {
 }
 
 #[test]
+fn network_compatibility_commands_preserve_filters() {
+    for (command_name, expected_verb) in [("dom_network", "net"), ("har", "har")] {
+        let mut cmd = command(command_name);
+        let values = cmd.args.as_mut().expect("sample arguments");
+        values.insert("scan_limit".to_string(), json!("200"));
+        values.insert("url_pattern".to_string(), json!("reset|profile"));
+        values.insert("methods".to_string(), json!(["GET", "POST"]));
+        values.insert("statuses".to_string(), json!(["200", "401"]));
+
+        let (verb_name, args) = serve::translate(&cmd).expect("translates");
+        assert_eq!(verb_name, expected_verb);
+        assert_eq!(args.u64("scan_limit", 0), 200);
+        assert_eq!(args.opt_str("url_pattern"), Some("reset|profile"));
+        assert_eq!(
+            args.opt_str_list("methods").expect("methods"),
+            vec!["GET", "POST"]
+        );
+        assert_eq!(
+            args.opt_str_list("statuses").expect("statuses"),
+            vec!["200", "401"]
+        );
+    }
+}
+
+#[test]
 fn an_unknown_command_is_refused_by_name() {
     let err = serve::translate(&command("teleport")).expect_err("unknown command");
     assert!(err.contains("teleport"), "{err}");
@@ -491,7 +516,11 @@ async fn malformed_json_is_a_400_with_a_reason() {
     let registry = Registry::default();
     let (status, reply) = serve::route("POST", "/v1/browser/command", b"{oops", &registry).await;
     assert_eq!(status, 400);
-    assert!(reply.error.contains("invalid JSON command"), "{}", reply.error);
+    assert!(
+        reply.error.contains("invalid JSON command"),
+        "{}",
+        reply.error
+    );
 }
 
 #[tokio::test]
@@ -524,7 +553,11 @@ async fn launch_without_a_context_id_is_refused() {
     let cmd: Command = serde_json::from_value(body).expect("decodes");
     let reply = serve::dispatch(cmd, &registry).await;
     assert!(!reply.success);
-    assert!(reply.error.contains("browser_context_id"), "{}", reply.error);
+    assert!(
+        reply.error.contains("browser_context_id"),
+        "{}",
+        reply.error
+    );
     assert!(registry.is_empty().await);
 }
 
@@ -554,15 +587,26 @@ async fn an_abandoned_session_is_reaped_and_a_used_one_is_not() {
     // Reaching a session is use. This is the only difference between the two.
     registry.get("busy").await.expect("busy session is open");
 
-    let closed = registry.reap_idle(std::time::Duration::from_millis(50)).await;
-    assert_eq!(closed, vec!["gone".to_string()], "only the idle context closes");
+    let closed = registry
+        .reap_idle(std::time::Duration::from_millis(50))
+        .await;
+    assert_eq!(
+        closed,
+        vec!["gone".to_string()],
+        "only the idle context closes"
+    );
     assert_eq!(registry.list().await, vec!["busy".to_string()]);
 
     // The clock is per session, so the survivor is reapable once it too goes idle.
     tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-    let closed = registry.reap_idle(std::time::Duration::from_millis(50)).await;
+    let closed = registry
+        .reap_idle(std::time::Duration::from_millis(50))
+        .await;
     assert_eq!(closed, vec!["busy".to_string()]);
-    assert!(registry.is_empty().await, "the fleet is empty after reaping");
+    assert!(
+        registry.is_empty().await,
+        "the fleet is empty after reaping"
+    );
 }
 
 #[tokio::test]
@@ -619,7 +663,8 @@ fn the_reply_wire_shape_keeps_the_keys_a_client_reads() {
 
 #[test]
 fn conflicting_content_length_headers_are_refused() {
-    let headers = "POST /v1/browser/command HTTP/1.1\r\nContent-Length: 42\r\nContent-Length: 100\r\n\r\n";
+    let headers =
+        "POST /v1/browser/command HTTP/1.1\r\nContent-Length: 42\r\nContent-Length: 100\r\n\r\n";
     let err = serve::content_length(headers).expect_err("conflict");
     assert!(err.contains("conflicting Content-Length"), "{err}");
     let agreed = "POST / HTTP/1.1\r\nContent-Length: 42\r\ncontent-length: 42\r\n\r\n";

@@ -235,10 +235,7 @@ impl Reply {
             json!(active_contexts),
         );
         metadata.insert("schema_version".to_string(), json!(SCHEMA_VERSION));
-        metadata.insert(
-            "verbs".to_string(),
-            json!(crate::verb::registry().len()),
-        );
+        metadata.insert("verbs".to_string(), json!(crate::verb::registry().len()));
         let stealth = engine.is_some();
         metadata.insert(
             "stealth_engine".to_string(),
@@ -386,7 +383,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             args.set("selector", selector_of(command)?);
             // A file input takes several files, so an array is the natural shape;
             // one path as a string is what older clients send.
-            match command.arg_array("files").or_else(|| command.arg_array("paths")) {
+            match command
+                .arg_array("files")
+                .or_else(|| command.arg_array("paths"))
+            {
                 Some(files) => args.set("files", files),
                 None => args.set(
                     "files",
@@ -406,7 +406,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
                     .any_arg(&["trigger", "selector", "button"])
                     .ok_or("trigger is required: what opens the chooser")?,
             );
-            match command.arg_array("files").or_else(|| command.arg_array("paths")) {
+            match command
+                .arg_array("files")
+                .or_else(|| command.arg_array("paths"))
+            {
                 Some(files) => args.set("files", files),
                 None => args.set(
                     "files",
@@ -415,7 +418,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
                         .ok_or("path is required for choose_files")?,
                 ),
             };
-            if let Some(ms) = command.arg("timeout_ms").and_then(|v| v.parse::<i64>().ok()) {
+            if let Some(ms) = command
+                .arg("timeout_ms")
+                .and_then(|v| v.parse::<i64>().ok())
+            {
                 args.set("timeout_ms", ms);
             }
             "choose-files"
@@ -472,7 +478,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             if let Some(name) = command.any_arg(&["name", "file", "filename"]) {
                 args.set("name", name);
             }
-            if let Some(ms) = command.arg("timeout_ms").and_then(|v| v.parse::<i64>().ok()) {
+            if let Some(ms) = command
+                .arg("timeout_ms")
+                .and_then(|v| v.parse::<i64>().ok())
+            {
                 args.set("timeout_ms", ms);
             }
             "download-wait"
@@ -487,7 +496,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             if let Some(name) = command.any_arg(&["name", "file", "filename"]) {
                 args.set("name", name);
             }
-            if let Some(ms) = command.arg("timeout_ms").and_then(|v| v.parse::<i64>().ok()) {
+            if let Some(ms) = command
+                .arg("timeout_ms")
+                .and_then(|v| v.parse::<i64>().ok())
+            {
                 args.set("timeout_ms", ms);
             }
             "download-save"
@@ -508,8 +520,14 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             "dialog"
         }
         "mouse" => {
-            args.set("x", parse_i64(command.arg("x").ok_or("x is required")?, "x")?);
-            args.set("y", parse_i64(command.arg("y").ok_or("y is required")?, "y")?);
+            args.set(
+                "x",
+                parse_i64(command.arg("x").ok_or("x is required")?, "x")?,
+            );
+            args.set(
+                "y",
+                parse_i64(command.arg("y").ok_or("y is required")?, "y")?,
+            );
             "mouse"
         }
         "scroll" => {
@@ -563,8 +581,21 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         }
         // Network log aliases.
         "dom_network_log" | "dom_network" => {
-            if let Some(limit) = command.arg("limit") {
-                args.set("limit", parse_i64(limit, "limit")?);
+            for key in ["limit", "scan_limit"] {
+                if let Some(value) = command.arg(key) {
+                    args.set(key, parse_i64(value, key)?);
+                }
+            }
+            if let Some(value) = command.arg("url_pattern") {
+                args.set("url_pattern", value);
+            }
+            for key in ["methods", "statuses"] {
+                if let Some(values) = command.arg_array(key) {
+                    args.set(key, values);
+                }
+            }
+            if let Some(value) = command.arg("headers") {
+                args.set("headers", truthy(value));
             }
             "net"
         }
@@ -573,8 +604,18 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             if let Some(path) = command.any_arg(&["path", "file"]) {
                 args.set("path", path);
             }
-            if let Some(limit) = command.arg("limit") {
-                args.set("limit", parse_i64(limit, "limit")?);
+            for key in ["limit", "scan_limit"] {
+                if let Some(value) = command.arg(key) {
+                    args.set(key, parse_i64(value, key)?);
+                }
+            }
+            if let Some(value) = command.arg("url_pattern") {
+                args.set("url_pattern", value);
+            }
+            for key in ["methods", "statuses"] {
+                if let Some(values) = command.arg_array(key) {
+                    args.set(key, values);
+                }
             }
             "har"
         }
@@ -587,12 +628,43 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             "new-context"
         }
         "dom_switch_context" => {
-            args.set("context_id", command.arg("context_id").ok_or("context_id is required")?);
+            args.set(
+                "context_id",
+                command.arg("context_id").ok_or("context_id is required")?,
+            );
             "switch-context"
         }
         "dom_close_context" => {
-            args.set("context_id", command.arg("context_id").ok_or("context_id is required")?);
+            args.set(
+                "context_id",
+                command.arg("context_id").ok_or("context_id is required")?,
+            );
             "close-context"
+        }
+        "dom_clone_context" => {
+            args.set(
+                "context_id",
+                command.arg("context_id").ok_or("context_id is required")?,
+            );
+            "clone-context"
+        }
+        "dom_get_context_info" => {
+            args.set(
+                "context_id",
+                command.arg("context_id").ok_or("context_id is required")?,
+            );
+            "context-info"
+        }
+        "dom_set_proxy" => {
+            args.set(
+                "context_id",
+                command.arg("context_id").ok_or("context_id is required")?,
+            );
+            args.set(
+                "proxy_url",
+                command.arg("proxy_url").ok_or("proxy_url is required")?,
+            );
+            "set-proxy"
         }
         // Local/session storage. Eval-based, no dedicated verb.
         "dom_get_local_storage" => {
@@ -608,7 +680,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         "dom_set_local_storage" => {
             let key = command.arg("key").ok_or("key is required")?;
             let value = command.arg("value").unwrap_or("");
-            args.set("script", format!("localStorage.setItem({key:?}, {value:?})"));
+            args.set(
+                "script",
+                format!("localStorage.setItem({key:?}, {value:?})"),
+            );
             "eval"
         }
         "dom_clear_local_storage" => {
@@ -633,7 +708,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         "dom_set_session_storage" => {
             let key = command.arg("key").ok_or("key is required")?;
             let value = command.arg("value").unwrap_or("");
-            args.set("script", format!("sessionStorage.setItem({key:?}, {value:?})"));
+            args.set(
+                "script",
+                format!("sessionStorage.setItem({key:?}, {value:?})"),
+            );
             "eval"
         }
         "dom_clear_session_storage" => {
@@ -648,7 +726,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         // User agent and viewport: set via eval on the BiDi session.
         "dom_set_user_agent" => {
             let ua = command.arg("user_agent").ok_or("user_agent is required")?;
-            args.set("script", format!("Object.defineProperty(navigator, 'userAgent', {{get: () => {ua:?}}})"));
+            args.set(
+                "script",
+                format!("Object.defineProperty(navigator, 'userAgent', {{get: () => {ua:?}}})"),
+            );
             "eval"
         }
         "dom_set_viewport" => {
@@ -662,7 +743,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         "route" | "routes" | "dom_get_headers" => "route",
         "route_clear" | "dom_clear_intercepts" => "route-clear",
         "route_fulfil" | "route_fulfill" | "dom_intercept_response" => {
-            args.set("pattern", command.arg("pattern").ok_or("pattern is required")?);
+            args.set(
+                "pattern",
+                command.arg("pattern").ok_or("pattern is required")?,
+            );
             if let Some(value) = command.arg("headers") {
                 args.set("headers", value);
             }
@@ -678,7 +762,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
             "route-fulfil"
         }
         "route_abort" | "dom_abort_request" => {
-            args.set("pattern", command.arg("pattern").ok_or("pattern is required")?);
+            args.set(
+                "pattern",
+                command.arg("pattern").ok_or("pattern is required")?,
+            );
             "route-abort"
         }
         "route_continue" | "dom_set_extra_headers" => {
@@ -695,7 +782,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         }
         // A request route with a body is a fulfil; without one it is a header edit.
         "dom_intercept_request" => {
-            args.set("pattern", command.arg("pattern").ok_or("pattern is required")?);
+            args.set(
+                "pattern",
+                command.arg("pattern").ok_or("pattern is required")?,
+            );
             if let Some(value) = command.arg("headers") {
                 args.set("headers", value);
             }
@@ -710,10 +800,7 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         "dom_set_header" => {
             let name = command.arg("name").ok_or("name is required")?;
             let value = command.arg("value").unwrap_or("");
-            args.set(
-                "headers",
-                serde_json::json!({ name: value }).to_string(),
-            );
+            args.set("headers", serde_json::json!({ name: value }).to_string());
             "route-continue"
         }
         "dom_delete_header" => {
@@ -722,8 +809,15 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         }
         // DOM eval alias (same as dom_readonly_eval).
         "dom_eval" => {
-            args.set("script", command.any_arg(&["code", "script"]).ok_or("code is required")?);
-            if let Some(frame) = command.arg("frame") { args.set("frame", frame); }
+            args.set(
+                "script",
+                command
+                    .any_arg(&["code", "script"])
+                    .ok_or("code is required")?,
+            );
+            if let Some(frame) = command.arg("frame") {
+                args.set("frame", frame);
+            }
             "eval"
         }
         // Checkbox toggle.
@@ -737,8 +831,11 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         }
         // Combined storage dump.
         "dom_storage" => {
-            args.set("script",
-                "JSON.stringify({local: {...localStorage}, session: {...sessionStorage}})".to_string());
+            args.set(
+                "script",
+                "JSON.stringify({local: {...localStorage}, session: {...sessionStorage}})"
+                    .to_string(),
+            );
             "eval"
         }
         // IndexedDB: list databases.
@@ -794,7 +891,9 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         // Form actions.
         "dom_form" => {
             let selector = selector_of(command)?;
-            let action = command.arg("form_action").ok_or("form_action is required (submit|reset|serialize)")?;
+            let action = command
+                .arg("form_action")
+                .ok_or("form_action is required (submit|reset|serialize)")?;
             let script = match action {
                 "submit" => format!("document.querySelector({selector:?})?.submit()"),
                 "reset" => format!("document.querySelector({selector:?})?.reset()"),
@@ -818,7 +917,10 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         }
         // Wait for selector with timeout.
         "dom_wait_for" => {
-            let selector = command.arg("wait_selector").or_else(|| command.arg("selector")).ok_or("selector is required")?;
+            let selector = command
+                .arg("wait_selector")
+                .or_else(|| command.arg("selector"))
+                .ok_or("selector is required")?;
             let timeout = command.arg("wait_timeout_ms").unwrap_or("5000");
             args.set("script", format!(
                 "new Promise((resolve, reject) => {{ const t0 = Date.now(); function check() {{ if (document.querySelector({selector:?})) resolve(true); else if (Date.now() - t0 > {timeout}) reject('timeout'); else setTimeout(check, 100); }} check(); }})",
@@ -827,13 +929,24 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         }
         // Scroll element into view.
         "dom_scroll_into_view" => {
-            let selector = command.arg("scroll_selector").or_else(|| command.arg("selector")).ok_or("selector is required")?;
-            args.set("script", format!("document.querySelector({selector:?})?.scrollIntoView({{behavior: 'smooth'}})"));
+            let selector = command
+                .arg("scroll_selector")
+                .or_else(|| command.arg("selector"))
+                .ok_or("selector is required")?;
+            args.set(
+                "script",
+                format!(
+                    "document.querySelector({selector:?})?.scrollIntoView({{behavior: 'smooth'}})"
+                ),
+            );
             "eval"
         }
         // Hover (dispatch mouseover/mouseenter).
         "dom_hover" => {
-            let selector = command.arg("hover_selector").or_else(|| command.arg("selector")).ok_or("selector is required")?;
+            let selector = command
+                .arg("hover_selector")
+                .or_else(|| command.arg("selector"))
+                .ok_or("selector is required")?;
             args.set("script", format!(
                 "(() => {{ const el = document.querySelector({selector:?}); if (!el) return; el.dispatchEvent(new MouseEvent('mouseover', {{bubbles: true}})); el.dispatchEvent(new MouseEvent('mouseenter', {{bubbles: true}})); }})()",
             ));
@@ -841,13 +954,22 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         }
         // Focus element.
         "dom_focus" => {
-            let selector = command.arg("focus_selector").or_else(|| command.arg("selector")).ok_or("selector is required")?;
-            args.set("script", format!("document.querySelector({selector:?})?.focus()"));
+            let selector = command
+                .arg("focus_selector")
+                .or_else(|| command.arg("selector"))
+                .ok_or("selector is required")?;
+            args.set(
+                "script",
+                format!("document.querySelector({selector:?})?.focus()"),
+            );
             "eval"
         }
         // Download a URL via fetch + blob.
         "dom_download" => {
-            let url = command.arg("download_url").or_else(|| command.arg("url")).ok_or("url is required")?;
+            let url = command
+                .arg("download_url")
+                .or_else(|| command.arg("url"))
+                .ok_or("url is required")?;
             args.set("script", format!(
                 "fetch({url:?}).then(r => r.blob()).then(b => {{ const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = ''; a.click(); }})",
             ));
@@ -864,11 +986,16 @@ pub fn translate(command: &Command) -> Result<(&'static str, Args), String> {
         // Set inline style.
         "dom_set_style" => {
             let selector = selector_of(command)?;
-            let prop = command.arg("attr_name").ok_or("attr_name (CSS property) is required")?;
+            let prop = command
+                .arg("attr_name")
+                .ok_or("attr_name (CSS property) is required")?;
             let val = command.arg("attr_value").unwrap_or("");
-            args.set("script", format!(
-                "document.querySelector({selector:?})?.style.setProperty({prop:?}, {val:?})",
-            ));
+            args.set(
+                "script",
+                format!(
+                    "document.querySelector({selector:?})?.style.setProperty({prop:?}, {val:?})",
+                ),
+            );
             "eval"
         }
         // Mutation observer: install and collect mutations.
@@ -1150,8 +1277,10 @@ impl Registry {
     pub async fn describe(&self) -> Vec<Value> {
         let entries: Vec<(String, Arc<Entry>)> = {
             let guard = self.sessions.lock().await;
-            let mut rows: Vec<(String, Arc<Entry>)> =
-                guard.iter().map(|(k, v)| (k.clone(), Arc::clone(v))).collect();
+            let mut rows: Vec<(String, Arc<Entry>)> = guard
+                .iter()
+                .map(|(k, v)| (k.clone(), Arc::clone(v)))
+                .collect();
             rows.sort_by(|a, b| a.0.cmp(&b.0));
             rows
         };
@@ -1230,10 +1359,10 @@ impl Registry {
             },
             ..LaunchOptions::default()
         }));
-        self.sessions
-            .lock()
-            .await
-            .insert(context.to_string(), Arc::new(Entry::new(Arc::clone(&session))));
+        self.sessions.lock().await.insert(
+            context.to_string(),
+            Arc::new(Entry::new(Arc::clone(&session))),
+        );
         Ok(session)
     }
 
@@ -1305,9 +1434,15 @@ pub async fn dispatch(command: Command, registry: &Registry) -> Reply {
                 metadata: Reply::base_metadata(),
                 ..Reply::default()
             };
-            reply.metadata.insert("count".to_string(), json!(sessions.len()));
-            reply.metadata.insert("contexts".to_string(), json!(contexts));
-            reply.metadata.insert("sessions".to_string(), json!(sessions));
+            reply
+                .metadata
+                .insert("count".to_string(), json!(sessions.len()));
+            reply
+                .metadata
+                .insert("contexts".to_string(), json!(contexts));
+            reply
+                .metadata
+                .insert("sessions".to_string(), json!(sessions));
             reply
                 .metadata
                 .insert("idle_limit_ms".to_string(), json!(idle_ms()));
@@ -1509,12 +1644,7 @@ async fn handle_connection(mut stream: TcpStream, registry: Arc<Registry>) {
 
 /// Route one request. Pure apart from the registry, so the protocol is testable
 /// without a socket.
-pub async fn route(
-    method: &str,
-    raw_path: &str,
-    body: &[u8],
-    registry: &Registry,
-) -> (u16, Reply) {
+pub async fn route(method: &str, raw_path: &str, body: &[u8], registry: &Registry) -> (u16, Reply) {
     let path_without_query = raw_path.split('?').next().unwrap_or(raw_path);
     let path = if path_without_query.len() > 1 {
         path_without_query.trim_end_matches('/')

@@ -1,18 +1,25 @@
-//! Focus a field and type into it, once the field is there and actionable.
-
+//! Replace a field's value, once the field is there and actionable.
 use crate::error::Error;
 use crate::session::Session;
-use crate::verb::{ArgSpec, ArgType, Args, Domain, Output, OutputKind, Stability, VerbFuture, VerbSpec};
+use crate::verb::{
+    ArgSpec, ArgType, Args, Domain, Output, OutputKind, Stability, VerbFuture, VerbSpec,
+};
 
 /// Registry entry. Faces read this; they never hardcode the verb.
 pub static SPEC: VerbSpec = VerbSpec {
     name: "fill",
     aliases: &["dom.fill"],
     domain: Domain::Dom,
-    summary: "Focus a field and type text, waiting for it to be actionable.",
+    summary: "Replace a field's value, waiting for it to be actionable.",
     args: &[
         crate::verb::SELECTOR_ARG,
-        ArgSpec { name: "text", ty: ArgType::Str, required: true, default: None, help: "Text to type." },
+        ArgSpec {
+            name: "text",
+            ty: ArgType::Str,
+            required: true,
+            default: None,
+            help: "Text to type.",
+        },
         crate::verb::TIMEOUT_ARG,
     ],
     output: OutputKind::Text,

@@ -30,7 +30,7 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 | `choose-files` | `trigger`, `files`, `timeout_ms?` | text | stable | Press what opens a file chooser and give the chooser these files. |
 | `click` | `selector`, `timeout_ms?` | text | stable | Click an element, waiting for it to be actionable. |
 | `count` | `selector` | json | stable | Number of elements matching a selector, total and visible. |
-| `fill` | `selector`, `text`, `timeout_ms?` | text | stable | Focus a field and type text, waiting for it to be actionable. |
+| `fill` | `selector`, `text`, `timeout_ms?` | text | stable | Replace a field's value, waiting for it to be actionable. |
 | `select` | `selector`, `value`, `timeout_ms?` | text | stable | Select an option by value, waiting for the control to be actionable. |
 | `text` | `selector`, `timeout_ms?` | text | stable | Visible text of an element, waiting for it to appear. |
 | `type` | `text` | text | stable | Type text into the focused element. |
@@ -75,8 +75,8 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 
 | Verb | Arguments | Output | Stability | Summary |
 |---|---|---|---|---|
-| `har` | `path?`, `limit?` | json | stable | Export captured traffic as a HAR 1.2 log, with credentials redacted. Writes a file when given a path. |
-| `net` | `limit?`, `headers?` | json | stable | Recent network requests with status and redacted headers. |
+| `har` | `path?`, `limit?`, `scan_limit?`, `url_pattern?`, `methods?`, `statuses?` | json | stable | Export captured traffic as a HAR 1.2 log, with credentials redacted. Writes a file when given a path. |
+| `net` | `limit?`, `scan_limit?`, `url_pattern?`, `methods?`, `statuses?`, `headers?` | json | stable | Recent network requests with status and redacted headers. |
 | `net-clear` | - | text | stable | Empty the network log so the next read shows only new traffic. |
 | `net-tokens` | `limit?` | json | stable | Where credentials appear in captured traffic: header, query, or cookie. |
 
@@ -116,9 +116,12 @@ A `selector` argument accepts a CSS selector or one of the semantic forms in [`S
 
 | Verb | Arguments | Output | Stability | Summary |
 |---|---|---|---|---|
+| `clone-context` | `context_id` | text | preview | Clone a browser context, duplicating its cookies and state. |
 | `close-context` | `context_id` | text | stable | Close a browser context by id. |
+| `context-info` | `context_id?` | json | preview | Get context details: user agent, viewport, cookie count, url. |
 | `contexts` | - | json | stable | List active browser contexts (sessions). |
 | `new-context` | `url?` | text | stable | Create a new browser context. Navigates to url if given. |
+| `set-proxy` | `proxy_url`, `context_id?` | text | preview | Set a per-context proxy URL for routing browser traffic. |
 | `switch-context` | `context_id` | text | stable | Switch to a browser context by id. |
 
 ## session

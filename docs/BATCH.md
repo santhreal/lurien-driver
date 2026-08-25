@@ -20,6 +20,13 @@ A step is a verb name followed by `key=value` pairs, named exactly as
 click selector="role:button=Log in"
 ```
 
+Inside a quoted value, use JSON-style escapes for a quote, backslash, newline,
+carriage return, or tab:
+
+```
+eval script="return {\"ok\": true};"
+```
+
 A list value is comma separated:
 
 ```

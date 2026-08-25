@@ -70,10 +70,10 @@ reply="$(cmd launch "\"profile_dir\":\"$work/profile\",\"url\":\"about:blank\"")
 echo "$reply" | grep -q '"success":true' || { echo "FAIL: launch failed: $reply"; exit 1; }
 
 # Phase 1: a form filled and submitted in one call.
-steps="[\"goto url=$url\",\"fill selector=label:Email text=me@example.com\",\"click selector=\\\"role:button=Log in\\\"\",\"title\"]"
+steps="[\"goto url=$url\",\"eval script=document.getElementById('a4').value='stale'\",\"fill selector=label:Email text=me@example.com\",\"click selector=\\\"role:button=Log in\\\"\",\"title\"]"
 reply="$(cmd batch "\"args\":{\"steps\":$steps}")"
 echo "$reply" | grep -q '"success":true' || fail "the batch did not run: $reply"
-echo "$reply" | grep -q '"ran":4' || fail "the batch did not report four steps: $reply"
+echo "$reply" | grep -q '"ran":5' || fail "the batch did not report five steps: $reply"
 log="$(cmd execute_js "\"args\":{\"code\":\"JSON.stringify(window.__log.map(r => r.what))\"}")"
 case "$log" in
   *a4:focused*) ;;
@@ -85,6 +85,14 @@ case "$log" in
 esac
 case "$log" in
   *untrusted*) fail "a batched act arrived as an untrusted event: $log" ;;
+esac
+filled="$(cmd execute_js '"args":{"code":"document.getElementById(\"a4\").value"}')"
+case "$filled" in
+  *me@example.com*) ;;
+  *) fail "the fill step did not set the requested value: $filled" ;;
+esac
+case "$filled" in
+  *stale*) fail "the fill step appended instead of replacing: $filled" ;;
 esac
 
 # Phase 2: a batch that fails mid-way says how far it got.
@@ -119,4 +127,4 @@ if [ "$failed" -ne 0 ]; then
   tail -40 "$work/serve.log"
   exit 1
 fi
-echo "PASS: a batch ran four verbs in one call, stopped at a failing step and said how far it got, and the CLI ran the same list"
+echo "PASS: a batch ran five verbs in one call, replaced the field value, stopped at a failing step and said how far it got, and the CLI ran the same list"

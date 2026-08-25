@@ -40,8 +40,8 @@ pub mod profile_import;
 pub mod resolve;
 pub mod route;
 pub mod serve;
-pub mod shot;
 pub mod session;
+pub mod shot;
 pub mod snapshot;
 pub mod token;
 pub mod verb;
@@ -52,19 +52,19 @@ use launch::LaunchOptions;
 use runtime_foxdriver::{CapturedCookie, FrameId, Page};
 
 pub use as_profile::as_profile;
-pub use error::Error;
 pub use challenge::{ChallengeConfig, EngineOutcome, SeenWidget};
 pub use clock::Reading as ClockReading;
 pub use control::Control;
+pub use error::Error;
 pub use geo::{Geolocation, Position};
 pub use goto::{ChallengeKind, GotoOutcome};
 pub use launch::LaunchOptions as BrowserLaunchOptions;
-pub use permission::{Grant, PermissionPolicy};
 pub use locator::{Form, Resolved};
-pub use snapshot::{Node, Snapshot};
+pub use permission::{Grant, PermissionPolicy};
 pub use profile_import::{import_profile, ImportReport};
 pub use resolve::{resolve_engine, resolve_engine_checked};
 pub use session::Session;
+pub use snapshot::{Node, Snapshot};
 pub use verb::{Args, Output, VerbSpec};
 pub use version::{crate_version, engine_version_string, version_line};
 
@@ -160,11 +160,7 @@ impl Browser {
     }
 
     /// Resolve `selector` for a read: present is enough, visible is not required.
-    pub async fn locate_present(
-        &self,
-        selector: &str,
-        timeout_ms: u64,
-    ) -> Result<Resolved, Error> {
+    pub async fn locate_present(&self, selector: &str, timeout_ms: u64) -> Result<Resolved, Error> {
         let selector = self.deref_handle(selector).await?;
         locator::resolve_present(&self.page, &selector, timeout_ms).await
     }
@@ -189,12 +185,15 @@ impl Browser {
                         action: "call `snapshot` first, then use a handle it reports".to_string(),
                     })
                 }
-                Some(snap) => snap.node(handle).cloned().ok_or_else(|| Error::Unresolved {
-                    selector: selector.to_string(),
-                    detail: format!("no such handle in the last snapshot ({})", snap.handles()),
-                    waited_ms: 0,
-                    action: "take a fresh snapshot and use the handle it reports".to_string(),
-                })?,
+                Some(snap) => snap
+                    .node(handle)
+                    .cloned()
+                    .ok_or_else(|| Error::Unresolved {
+                        selector: selector.to_string(),
+                        detail: format!("no such handle in the last snapshot ({})", snap.handles()),
+                        waited_ms: 0,
+                        action: "take a fresh snapshot and use the handle it reports".to_string(),
+                    })?,
             }
         };
         snapshot::verify(&self.page, &known).await?;
@@ -203,7 +202,8 @@ impl Browser {
 
     /// Click the first match of `selector`, waiting for it to be actionable.
     pub async fn click(&self, selector: &str) -> Result<(), Error> {
-        self.click_within(selector, locator::default_timeout_ms()).await
+        self.click_within(selector, locator::default_timeout_ms())
+            .await
     }
 
     /// Click, with the caller's own deadline.
@@ -227,7 +227,8 @@ impl Browser {
 
     /// Focus `selector` and type `text`, waiting for the field to be actionable.
     pub async fn fill(&self, selector: &str, text: &str) -> Result<(), Error> {
-        self.fill_within(selector, text, locator::default_timeout_ms()).await
+        self.fill_within(selector, text, locator::default_timeout_ms())
+            .await
     }
 
     /// Fill, with the caller's own deadline.
@@ -244,9 +245,55 @@ impl Browser {
             .await
             .map_err(|e| Error::Other(e.to_string()))?;
         el.click().await.map_err(|e| Error::Other(e.to_string()))?;
+
+        let css = serde_json::to_string(&found.css)
+            .map_err(|error| Error::Other(format!("serialize fill selector: {error}")))?;
+        let script = format!(
+            r#"(() => {{
+                const field = document.querySelector({css});
+                if (!field) return false;
+                if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {{
+                    const prototype = field instanceof HTMLTextAreaElement
+                        ? HTMLTextAreaElement.prototype
+                        : HTMLInputElement.prototype;
+                    const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+                    if (setter) setter.call(field, "");
+                    else field.value = "";
+                }} else if (field.isContentEditable) {{
+                    field.textContent = "";
+                }} else {{
+                    return false;
+                }}
+                field.dispatchEvent(new InputEvent("input", {{
+                    bubbles: true,
+                    inputType: "deleteContentBackward",
+                    data: null,
+                }}));
+                field.dispatchEvent(new Event("change", {{ bubbles: true }}));
+                return true;
+            }})()"#
+        );
+        let cleared = self
+            .page
+            .evaluate(&script)
+            .await
+            .map_err(|error| Error::Other(format!("fill clear: {error}")))?
+            .into_value::<bool>()
+            .map_err(|error| Error::Other(format!("fill clear result: {error}")))?;
+        if !cleared {
+            return Err(Error::Other(format!(
+                "fill target {selector:?} does not accept text"
+            )));
+        }
+
+        let el = self
+            .page
+            .find_element(&found.css)
+            .await
+            .map_err(|error| Error::Other(error.to_string()))?;
         el.type_text(text)
             .await
-            .map_err(|e| Error::Other(e.to_string()))
+            .map_err(|error| Error::Other(error.to_string()))
     }
 
     /// Wheel scroll at the current mouse position.

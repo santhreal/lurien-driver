@@ -149,12 +149,32 @@ fn pairs(rest: &str, number: usize) -> Result<Vec<(String, String)>, Error> {
         if chars.peek() == Some(&'"') {
             chars.next();
             let mut closed = false;
-            for c in chars.by_ref() {
-                if c == '"' {
-                    closed = true;
-                    break;
+            while let Some(c) = chars.next() {
+                match c {
+                    '"' => {
+                        closed = true;
+                        break;
+                    }
+                    '\\' => {
+                        let escaped = chars.next().ok_or_else(|| {
+                            bad(number, &format!("{key} ends with an incomplete escape"))
+                        })?;
+                        value.push(match escaped {
+                            '\\' => '\\',
+                            '"' => '"',
+                            'n' => '\n',
+                            'r' => '\r',
+                            't' => '\t',
+                            other => {
+                                return Err(bad(
+                                    number,
+                                    &format!("{key} has unsupported escape \\\\{other}"),
+                                ));
+                            }
+                        });
+                    }
+                    other => value.push(other),
                 }
-                value.push(c);
             }
             if !closed {
                 return Err(bad(number, &format!("{key} has an unclosed quote")));
@@ -175,12 +195,7 @@ fn pairs(rest: &str, number: usize) -> Result<Vec<(String, String)>, Error> {
 
 /// A step's text value in the type the verb declared, so a batch cannot smuggle
 /// a string into an integer argument.
-fn typed(
-    ty: ArgType,
-    raw: &str,
-    number: usize,
-    name: &str,
-) -> Result<serde_json::Value, Error> {
+fn typed(ty: ArgType, raw: &str, number: usize, name: &str) -> Result<serde_json::Value, Error> {
     match ty {
         ArgType::Str | ArgType::Path => Ok(serde_json::Value::String(raw.to_string())),
         ArgType::Int => raw
@@ -235,6 +250,18 @@ mod tests {
     fn a_quoted_value_keeps_its_spaces_and_equals_signs() {
         let (_, args) = parse("click selector=\"role:button=Log in\"", 1).expect("parses");
         assert_eq!(args.opt_str("selector"), Some("role:button=Log in"));
+    }
+
+    #[test]
+    fn a_quoted_value_decodes_json_style_escapes() {
+        let (_, args) = parse(r#"eval script="return {\"ok\": true};\n""#, 1).expect("parses");
+        assert_eq!(args.opt_str("script"), Some("return {\"ok\": true};\n"));
+    }
+
+    #[test]
+    fn an_unknown_quoted_escape_is_refused() {
+        let error = parse(r#"eval script="bad\q""#, 4).expect_err("escape must be known");
+        assert!(error.to_string().contains("unsupported escape"), "{error}");
     }
 
     /// Arguments are typed by the verb's own spec, or a batch would be the one

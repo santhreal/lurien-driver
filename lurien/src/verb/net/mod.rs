@@ -14,6 +14,78 @@ use runtime_foxdriver::{CapturedHeader, NetworkEntry};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+pub(crate) struct EntryFilter {
+    url_terms: Vec<String>,
+    methods: std::collections::BTreeSet<String>,
+    statuses: std::collections::BTreeSet<u16>,
+}
+
+impl EntryFilter {
+    pub(crate) fn from_args(args: &crate::verb::Args) -> Result<Self, crate::error::Error> {
+        let url_terms = args
+            .opt_str("url_pattern")
+            .unwrap_or("")
+            .split('|')
+            .map(str::trim)
+            .filter(|term| !term.is_empty())
+            .map(str::to_string)
+            .collect();
+        let methods = args
+            .opt_str_list("methods")?
+            .into_iter()
+            .map(|method| method.trim().to_ascii_uppercase())
+            .filter(|method| !method.is_empty())
+            .collect();
+        let statuses = args
+            .opt_str_list("statuses")?
+            .into_iter()
+            .map(|status| {
+                status.trim().parse::<u16>().map_err(|_| {
+                    crate::error::Error::Other(format!(
+                        "statuses entries must be HTTP status integers, got {status:?}"
+                    ))
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            url_terms,
+            methods,
+            statuses,
+        })
+    }
+
+    pub(crate) fn matches(&self, entry: &Arc<NetworkEntry>) -> bool {
+        (self.url_terms.is_empty()
+            || self
+                .url_terms
+                .iter()
+                .any(|term| entry.request.url.contains(term)))
+            && (self.methods.is_empty()
+                || self
+                    .methods
+                    .contains(&entry.request.method.as_str().to_ascii_uppercase()))
+            && (self.statuses.is_empty()
+                || entry
+                    .status()
+                    .is_some_and(|status| self.statuses.contains(&status)))
+    }
+}
+
+pub(crate) fn filtered_entries(
+    entries: Vec<Arc<NetworkEntry>>,
+    filter: &EntryFilter,
+    limit: usize,
+) -> Vec<Arc<NetworkEntry>> {
+    let mut matches = entries
+        .into_iter()
+        .filter(|entry| filter.matches(entry))
+        .collect::<Vec<_>>();
+    if matches.len() > limit {
+        matches.drain(..matches.len() - limit);
+    }
+    matches
+}
+
 /// Verbs of this domain. A new verb is one line here plus its own file.
 /// Registry entries for the network domain.
 pub static SPECS: &[&VerbSpec] = &[&clear::SPEC, &har::SPEC, &log::SPEC, &tokens::SPEC];
@@ -153,7 +225,10 @@ mod tests {
 
     #[test]
     fn cookie_headers_are_replaced_whole() {
-        assert_eq!(safe_header_value("cookie", "sid=deadbeef"), "***redacted***");
+        assert_eq!(
+            safe_header_value("cookie", "sid=deadbeef"),
+            "***redacted***"
+        );
         assert_eq!(
             safe_header_value("Set-Cookie", "cf_clearance=x"),
             "***redacted***"
@@ -171,11 +246,17 @@ mod tests {
     fn a_url_in_a_header_gets_the_query_rules() {
         for name in ["Location", "Referer", "Content-Location"] {
             let out = safe_header_value(name, "https://x.test/cb?code=abc&next=/home");
-            assert_eq!(out, "https://x.test/cb?code=<redacted>&next=/home", "{name}");
+            assert_eq!(
+                out, "https://x.test/cb?code=<redacted>&next=/home",
+                "{name}"
+            );
         }
         // Not a URL, not touched: a header that happens to contain a question
         // mark is still its own value.
-        assert_eq!(safe_header_value("accept", "text/html;q=0.9?x"), "text/html;q=0.9?x");
+        assert_eq!(
+            safe_header_value("accept", "text/html;q=0.9?x"),
+            "text/html;q=0.9?x"
+        );
     }
 
     #[test]
@@ -188,5 +269,31 @@ mod tests {
     #[test]
     fn a_url_without_a_query_is_untouched() {
         assert_eq!(safe_url("https://x.test/a/b"), "https://x.test/a/b");
+    }
+
+    /// Historical queries must combine URL alternatives, methods, and statuses before limiting output.
+    #[test]
+    fn network_filter_parses_all_dimensions() {
+        let args = crate::verb::Args::from_value(serde_json::json!({
+            "url_pattern": "user_voice|recommendedscreening",
+            "methods": ["post", "PUT"],
+            "statuses": ["200", "302"],
+        }))
+        .unwrap();
+        let filter = EntryFilter::from_args(&args).unwrap();
+        assert_eq!(filter.url_terms, vec!["user_voice", "recommendedscreening"]);
+        assert!(filter.methods.contains("POST"));
+        assert!(filter.methods.contains("PUT"));
+        assert!(filter.statuses.contains(&200));
+        assert!(filter.statuses.contains(&302));
+    }
+
+    #[test]
+    fn network_filter_rejects_non_numeric_statuses() {
+        let args = crate::verb::Args::from_value(serde_json::json!({
+            "statuses": ["success"],
+        }))
+        .unwrap();
+        assert!(EntryFilter::from_args(&args).is_err());
     }
 }

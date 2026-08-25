@@ -12,7 +12,9 @@
 
 use crate::error::Error;
 use crate::session::Session;
-use crate::verb::{ArgSpec, ArgType, Args, Domain, Output, OutputKind, Stability, VerbFuture, VerbSpec};
+use crate::verb::{
+    ArgSpec, ArgType, Args, Domain, Output, OutputKind, Stability, VerbFuture, VerbSpec,
+};
 use runtime_foxdriver::NetworkEntry;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -42,8 +44,12 @@ pub static SPEC: VerbSpec = VerbSpec {
             ty: ArgType::Int,
             required: false,
             default: Some("500"),
-            help: "Entries to export, newest last.",
+            help: "Matching entries to export, newest last.",
         },
+        ArgSpec { name: "scan_limit", ty: ArgType::Int, required: false, default: Some("5000"), help: "Recent entries to inspect before filters. Capped at 20000." },
+        ArgSpec { name: "url_pattern", ty: ArgType::Str, required: false, default: None, help: "URL substrings separated by |; any matching term is included." },
+        ArgSpec { name: "methods", ty: ArgType::StrList, required: false, default: None, help: "HTTP methods to include." },
+        ArgSpec { name: "statuses", ty: ArgType::StrList, required: false, default: None, help: "HTTP response statuses to include." },
     ],
     output: OutputKind::Json,
     stability: Stability::Stable,
@@ -55,19 +61,24 @@ fn call<'a>(session: &'a Session, args: &'a Args) -> VerbFuture<'a> {
 }
 
 async fn run(session: &Session, args: &Args) -> Result<Output, Error> {
-    let limit = args.u64("limit", 500).max(1) as usize;
+    let limit = args.u64("limit", 500).clamp(1, 5_000) as usize;
+    let scan_limit = args.u64("scan_limit", 5000).clamp(limit as u64, 20_000) as usize;
+    let filter = super::EntryFilter::from_args(args)?;
     let telemetry = session.telemetry().await?;
-    let entries = telemetry.network.last_n(limit).await;
+    let entries =
+        super::filtered_entries(telemetry.network.last_n(scan_limit).await, &filter, limit);
     let log = har(&entries);
     let count = entries.len();
     match args.opt_path("path") {
         Some(path) => {
             let text = serde_json::to_string_pretty(&log)
                 .map_err(|e| Error::Other(format!("writing the HAR: {e}")))?;
-            std::fs::write(&path, text.as_bytes()).map_err(|e| Error::Other(format!(
-                "writing the HAR to {}: {e}. Check that the directory exists and is writable",
-                path.display()
-            )))?;
+            std::fs::write(&path, text.as_bytes()).map_err(|e| {
+                Error::Other(format!(
+                    "writing the HAR to {}: {e}. Check that the directory exists and is writable",
+                    path.display()
+                ))
+            })?;
             Ok(Output::Json(json!({
                 "path": path.to_string_lossy(),
                 "entries": count,
@@ -248,7 +259,13 @@ fn post_data(body: &str, request_headers: &[runtime_foxdriver::CapturedHeader]) 
             .collect();
         let text = params
             .iter()
-            .map(|pair| format!("{}={}", pair["name"].as_str().unwrap_or_default(), pair["value"].as_str().unwrap_or_default()))
+            .map(|pair| {
+                format!(
+                    "{}={}",
+                    pair["name"].as_str().unwrap_or_default(),
+                    pair["value"].as_str().unwrap_or_default()
+                )
+            })
             .collect::<Vec<_>>()
             .join("&");
         return json!({ "mimeType": mime, "params": params, "text": text });
@@ -389,7 +406,9 @@ mod tests {
             ),
             entry(
                 "https://x.test/api",
-                Some("{\"user\":\"ana\",\"api_key\":\"sk-live-2\",\"nested\":{\"session\":\"s3\"}}"),
+                Some(
+                    "{\"user\":\"ana\",\"api_key\":\"sk-live-2\",\"nested\":{\"session\":\"s3\"}}",
+                ),
                 "application/json",
             ),
         ];
@@ -402,7 +421,10 @@ mod tests {
             "s3\"",
             "leaked",
         ] {
-            assert!(!text.contains(secret), "the export carries {secret:?}: {text}");
+            assert!(
+                !text.contains(secret),
+                "the export carries {secret:?}: {text}"
+            );
         }
         // Redaction is not deletion: the shape a reader needs is still there.
         assert!(text.contains("Bearer ***redacted***"), "{text}");
@@ -422,7 +444,10 @@ mod tests {
         assert_eq!(entry["request"]["method"], "POST");
         assert_eq!(entry["response"]["status"], 302);
         assert_eq!(entry["response"]["httpVersion"], "h2");
-        assert_eq!(entry["response"]["redirectURL"], "https://x.test/next?token=<redacted>");
+        assert_eq!(
+            entry["response"]["redirectURL"],
+            "https://x.test/next?token=<redacted>"
+        );
         // Timings are differences of what the browser reported, and the total is
         // the phases that were reported rather than a guess.
         assert_eq!(entry["timings"]["dns"], 5.0);
@@ -463,7 +488,10 @@ mod tests {
         let post = &log["log"]["entries"][0]["request"]["postData"];
         assert!(post.get("text").is_none(), "{post}");
         assert!(
-            post["comment"].as_str().unwrap_or_default().contains("omitted"),
+            post["comment"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("omitted"),
             "{post}"
         );
         assert!(!log.to_string().contains("hunter2"));
